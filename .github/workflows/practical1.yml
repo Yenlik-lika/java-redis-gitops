@@ -12,7 +12,7 @@ jobs:
         run: |
           git config user.name "Kutumova E."; git config user.email "kutumovaenlik@gmail.com"
           sed -i 's|image: java-app:.*|image: java-app:v1|' k8s/java-deployment.yaml
-          git commit -am "reset java-app to v1 [skip ci]" && git push || echo "already v1"
+          git pull -q --rebase origin main; sed -i "s|image: java-app:.*|image: java-app:v1|" k8s/java-deployment.yaml; git commit -am "reset java-app to v1 [skip ci]" && git push || echo "already v1"
           mkdir -p shots
 
       - name: "1. Create kind cluster"
@@ -63,7 +63,7 @@ jobs:
       - name: "5. GitOps update v1 -> v2 (commit + push)"
         run: |
           sed -i 's|image: java-app:v1|image: java-app:v2|' k8s/java-deployment.yaml
-          git commit -am "Bump java-app to v2 [skip ci]" && git push
+          git commit -am "Bump java-app to v2 [skip ci]" && (git push || (git pull --rebase origin main && git push))
           kubectl -n argocd annotate app java-redis-app argocd.argoproj.io/refresh=hard --overwrite
           for i in $(seq 1 30); do
             img=$(kubectl get deploy java-app -o jsonpath='{.spec.template.spec.containers[0].image}')
