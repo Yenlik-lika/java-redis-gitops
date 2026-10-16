@@ -2,7 +2,7 @@
 # Қадам 2: ArgoCD орнату
 set -e
 kubectl create namespace argocd || true
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 kubectl -n argocd rollout status deploy/argocd-server --timeout=600s
 kubectl -n argocd get pods
 echo; echo "ADMIN PASSWORD:"

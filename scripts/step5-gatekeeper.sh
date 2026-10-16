@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # OPA Gatekeeper: latest tag тыйымы
 set -e
-kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.17.1/deploy/gatekeeper.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.17.1/deploy/gatekeeper.yaml
 kubectl -n gatekeeper-system rollout status deploy/gatekeeper-controller-manager --timeout=300s
 kubectl apply -f gatekeeper/template-disallow-latest.yaml; sleep 15
 kubectl apply -f gatekeeper/constraint-disallow-latest.yaml; sleep 15
