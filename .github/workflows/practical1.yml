@@ -22,14 +22,15 @@ jobs:
         run: kubectl get nodes -o wide
 
       - name: "2. Install ArgoCD"
+        timeout-minutes: 15
         run: |
           kubectl create namespace argocd
-          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.3/manifests/install.yaml
           kubectl -n argocd rollout status deploy/argocd-server --timeout=600s
           kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=600s
           kubectl -n argocd get pods
           echo "ARGO_PW=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)" >> $GITHUB_ENV
-          curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && sudo install /tmp/argocd /usr/local/bin/argocd
+          curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/download/v2.13.3/argocd-linux-amd64 && sudo install /tmp/argocd /usr/local/bin/argocd
 
       - name: "3. Build java-app v1 & v2 and load into kind"
         run: |
@@ -115,6 +116,13 @@ jobs:
           kubectl apply -f gatekeeper/bad-deployment.yaml 2>&1 || true
           echo "=== nginx:1.27 (must be ALLOWED) ==="
           kubectl apply -f gatekeeper/good-deployment.yaml
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl -n argocd describe pods | tail -80 || true
+          kubectl -n argocd logs deploy/argocd-server --tail=50 || true
 
       - name: Upload screenshots & reports
         if: always()
