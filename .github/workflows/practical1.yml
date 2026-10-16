@@ -1,0 +1,126 @@
+name: Practical-1 GitOps + DevSecOps
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: "0. Ensure manifest starts at v1"
+        run: |
+          git config user.name "Kutumova E."; git config user.email "kutumovaenlik@gmail.com"
+          sed -i 's|image: java-app:.*|image: java-app:v1|' k8s/java-deployment.yaml
+          git commit -am "reset java-app to v1 [skip ci]" && git push || echo "already v1"
+          mkdir -p shots
+
+      - name: "1. Create kind cluster"
+        uses: helm/kind-action@v1
+        with: { cluster_name: devops }
+      - name: "1. kubectl get nodes"
+        run: kubectl get nodes -o wide
+
+      - name: "2. Install ArgoCD"
+        run: |
+          kubectl create namespace argocd
+          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          kubectl -n argocd rollout status deploy/argocd-server --timeout=600s
+          kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=600s
+          kubectl -n argocd get pods
+          echo "ARGO_PW=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)" >> $GITHUB_ENV
+          curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && sudo install /tmp/argocd /usr/local/bin/argocd
+
+      - name: "3. Build java-app v1 & v2 and load into kind"
+        run: |
+          for v in v1 v2; do
+            docker build -q --build-arg APP_VERSION=$v -t java-app:$v app
+            kind load docker-image java-app:$v --name devops
+          done
+          docker images | grep java-app
+
+      - name: "4. Apply ArgoCD Application + Sync log"
+        run: |
+          cat argocd/application.yaml
+          kubectl apply -f argocd/application.yaml
+          for i in $(seq 1 40); do
+            s=$(kubectl -n argocd get app java-redis-app -o jsonpath='{.status.sync.status}/{.status.health.status}')
+            echo "[$i] $s"; [ "$s" = "Synced/Healthy" ] && break; sleep 10; done
+          kubectl -n argocd get application java-redis-app
+          kubectl get deploy,svc,pods -o wide
+
+      - name: "4. ArgoCD UI screenshots"
+        run: |
+          kubectl port-forward svc/argocd-server -n argocd 8080:443 >/dev/null 2>&1 &
+          sleep 5
+          argocd login localhost:8080 --username admin --password "$ARGO_PW" --insecure
+          argocd app get java-redis-app
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+          python ci/screens.py "$ARGO_PW" || true
+          echo "PF_OK=1" >> $GITHUB_ENV
+
+      - name: "5. GitOps update v1 -> v2 (commit + push)"
+        run: |
+          sed -i 's|image: java-app:v1|image: java-app:v2|' k8s/java-deployment.yaml
+          git commit -am "Bump java-app to v2 [skip ci]" && git push
+          kubectl -n argocd annotate app java-redis-app argocd.argoproj.io/refresh=hard --overwrite
+          for i in $(seq 1 30); do
+            img=$(kubectl get deploy java-app -o jsonpath='{.spec.template.spec.containers[0].image}')
+            echo "[$i] image=$img"; [ "$img" = "java-app:v2" ] && break; sleep 10; done
+          kubectl rollout status deploy/java-app --timeout=180s
+          argocd app history java-redis-app
+          kubectl get pods -l app=java-app -o wide
+          python ci/screens.py "$ARGO_PW" || true
+
+      - name: "6. Self-heal demo (replicas 2 -> 5 -> auto 2)"
+        run: |
+          kubectl scale deploy java-app --replicas=5
+          kubectl get deploy java-app
+          for i in $(seq 1 30); do
+            r=$(kubectl get deploy java-app -o jsonpath='{.spec.replicas}')
+            echo "$(date +%T) replicas=$r"; [ "$r" = "2" ] && [ $i -gt 1 ] && break; sleep 5; done
+          kubectl get deploy java-app
+          kubectl -n argocd get events --field-selector involvedObject.name=java-redis-app | tail -15 || true
+
+      - name: "7. Trivy image scan"
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy image --severity CRITICAL,HIGH java-app:v2 | tee trivy-report.txt
+          echo "=== Pipeline gate: trivy --exit-code 1 --severity CRITICAL ==="
+          trivy image -q --exit-code 1 --severity CRITICAL --ignore-unfixed java-app:v2 && echo "GATE PASSED" || echo "PIPELINE STOPPED: CRITICAL vulnerability"
+          echo "=== Demo on vulnerable image (redis:6.0) ==="
+          trivy image -q --exit-code 1 --severity CRITICAL redis:6.0 | tail -25 || echo ">>> exit code 1 -> Jenkins 'Security Scan' stage FAILS"
+
+      - name: "9. SonarQube + Quality Gate"
+        continue-on-error: true
+        run: |
+          docker run -d --name sonar -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true sonarqube:lts-community
+          for i in $(seq 1 60); do curl -s localhost:9000/api/system/status | grep -q '"UP"' && break; sleep 5; done
+          curl -s -u admin:admin -X POST "localhost:9000/api/users/change_password?login=admin&previousPassword=admin&password=Admin12345!x"
+          TOKEN=$(curl -s -u 'admin:Admin12345!x' -X POST "localhost:9000/api/user_tokens/generate?name=ci" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+          cd app && mvn -B -q package sonar:sonar -Dsonar.projectKey=java-app -Dsonar.host.url=http://localhost:9000 -Dsonar.token=$TOKEN
+          sleep 20
+          echo "=== Quality Gate ==="
+          curl -s -u "$TOKEN:" "localhost:9000/api/qualitygates/project_status?projectKey=java-app" | python3 -m json.tool
+          cd .. && python ci/sonar-shot.py || true
+
+      - name: "10. OPA Gatekeeper - deny :latest"
+        run: |
+          kubectl apply --server-side -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.17.1/deploy/gatekeeper.yaml
+          kubectl -n gatekeeper-system rollout status deploy/gatekeeper-controller-manager --timeout=300s
+          kubectl apply -f gatekeeper/template-disallow-latest.yaml; sleep 20
+          kubectl apply -f gatekeeper/constraint-disallow-latest.yaml; sleep 20
+          kubectl get constrainttemplates,k8sdisallowlatesttag
+          echo "=== nginx:latest (must be DENIED) ==="
+          kubectl apply -f gatekeeper/bad-deployment.yaml 2>&1 || true
+          echo "=== nginx:1.27 (must be ALLOWED) ==="
+          kubectl apply -f gatekeeper/good-deployment.yaml
+
+      - name: Upload screenshots & reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: practical1-results
+          path: |
+            shots/
+            trivy-report.txt
