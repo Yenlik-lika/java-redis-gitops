@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-nginx
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: bad-nginx } }
+  template:
+    metadata: { labels: { app: bad-nginx } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest

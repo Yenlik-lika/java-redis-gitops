@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: good-nginx
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: good-nginx } }
+  template:
+    metadata: { labels: { app: good-nginx } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
