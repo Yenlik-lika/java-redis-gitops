@@ -86,7 +86,8 @@ jobs:
       - name: "7. Trivy image scan"
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-          trivy image --severity CRITICAL,HIGH java-app:v2 | tee trivy-report.txt
+          trivy image --download-db-only || trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2
+          trivy image --skip-db-update --severity CRITICAL,HIGH java-app:v2 | tee trivy-report.txt
           echo "=== Pipeline gate: trivy --exit-code 1 --severity CRITICAL ==="
           trivy image -q --exit-code 1 --severity CRITICAL --ignore-unfixed java-app:v2 && echo "GATE PASSED" || echo "PIPELINE STOPPED: CRITICAL vulnerability"
           echo "=== Demo on vulnerable image (redis:6.0) ==="
@@ -98,8 +99,9 @@ jobs:
           docker run -d --name sonar -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true sonarqube:lts-community
           for i in $(seq 1 60); do curl -s localhost:9000/api/system/status | grep -q '"UP"' && break; sleep 5; done
           curl -s -u admin:admin -X POST "localhost:9000/api/users/change_password?login=admin&previousPassword=admin&password=Admin12345!x"
+          echo "SonarQube version: $(curl -s localhost:9000/api/server/version)"
           TOKEN=$(curl -s -u 'admin:Admin12345!x' -X POST "localhost:9000/api/user_tokens/generate?name=ci" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-          cd app && mvn -B -q package sonar:sonar -Dsonar.projectKey=java-app -Dsonar.host.url=http://localhost:9000 -Dsonar.token=$TOKEN
+          cd app && mvn -B -q package sonar:sonar -Dsonar.projectKey=java-app -Dsonar.host.url=http://localhost:9000 -Dsonar.login=$TOKEN
           sleep 20
           echo "=== Quality Gate ==="
           curl -s -u "$TOKEN:" "localhost:9000/api/qualitygates/project_status?projectKey=java-app" | python3 -m json.tool
