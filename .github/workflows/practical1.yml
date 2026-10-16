@@ -11,8 +11,9 @@ jobs:
       - name: "0. Ensure manifest starts at v1"
         run: |
           git config user.name "Kutumova E."; git config user.email "kutumovaenlik@gmail.com"
+          git pull -q --rebase origin main
           sed -i 's|image: java-app:.*|image: java-app:v1|' k8s/java-deployment.yaml
-          git pull -q --rebase origin main; sed -i "s|image: java-app:.*|image: java-app:v1|" k8s/java-deployment.yaml; git commit -am "reset java-app to v1 [skip ci]" && git push || echo "already v1"
+          if ! git diff --quiet; then git commit -am "reset java-app to v1 [skip ci]"; git push; else echo "already v1"; fi
           mkdir -p shots
 
       - name: "1. Create kind cluster"
