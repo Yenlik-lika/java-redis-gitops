@@ -72,14 +72,14 @@ jobs:
           for i in $(seq 1 40); do curl -s localhost:8080/ >/dev/null; done
           echo "=== curl /metrics ==="; curl -s localhost:8080/metrics | tee logs4/05-metrics.txt
           kubectl port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 -n monitoring >/dev/null 2>&1 &
-          sleep 3
+          for i in $(seq 1 30); do curl -s localhost:9090/-/ready && break; sleep 2; done
           for i in $(seq 1 30); do
-            up=$(curl -s 'localhost:9090/api/v1/query?query=up{job="java-app"}' | python3 -c "import sys,json;r=json.load(sys.stdin)['data']['result'];print(len(r))")
+            up=$(curl -sG localhost:9090/api/v1/query --data-urlencode 'query=up{job="java-app"}' | python3 -c "import sys,json;r=json.load(sys.stdin).get('data',{}).get('result',[]);print(len(r))" || echo 0)
             echo "[$i] java-app targets found: $up"; [ "$up" -gt 0 ] && break; sleep 10; done
           echo "=== Prometheus: up{job=\"java-app\"} ==="
-          curl -s 'localhost:9090/api/v1/query?query=up{job="java-app"}' | python3 -m json.tool | tee logs4/05-up.json
+          curl -sG localhost:9090/api/v1/query --data-urlencode 'query=up{job="java-app"}' | python3 -m json.tool | tee logs4/05-up.json
           echo "=== Prometheus: app_http_requests_total ==="
-          curl -s 'localhost:9090/api/v1/query?query=app_http_requests_total' | python3 -m json.tool
+          curl -sG localhost:9090/api/v1/query --data-urlencode 'query=app_http_requests_total' | python3 -m json.tool
 
       - name: "6. Alert rule (PrometheusRule) HighCPUUsage"
         run: |
@@ -87,7 +87,7 @@ jobs:
           kubectl apply -f monitoring/alert-rules.yaml
           kubectl get prometheusrule -n monitoring app-alerts
           for i in $(seq 1 20); do
-            n=$(curl -s localhost:9090/api/v1/rules | python3 -c "import sys,json;g=json.load(sys.stdin)['data']['groups'];print(sum(1 for x in g for r in x['rules'] if r['name']=='HighCPUUsage'))")
+            n=$(curl -s localhost:9090/api/v1/rules | python3 -c "import sys,json;g=json.load(sys.stdin).get('data',{}).get('groups',[]);print(sum(1 for x in g for r in x['rules'] if r['name']=='HighCPUUsage'))" || echo 0)
             echo "[$i] rule loaded: $n"; [ "$n" -gt 0 ] && break; sleep 10; done
 
       - name: "7. Load generator + wait for alert FIRING"
@@ -98,8 +98,8 @@ jobs:
           kubectl get pods -o wide
           echo "=== Alert state timeline ===" | tee logs4/07-alert-log.txt
           for i in $(seq 1 60); do
-            cpu=$(curl -s 'localhost:9090/api/v1/query' --data-urlencode 'query=sum(rate(container_cpu_usage_seconds_total{namespace="default"}[5m]))' | python3 -c "import sys,json;r=json.load(sys.stdin)['data']['result'];print(round(float(r[0]['value'][1]),3) if r else 0)")
-            st=$(curl -s localhost:9090/api/v1/alerts | python3 -c "import sys,json;a=[x['state'] for x in json.load(sys.stdin)['data']['alerts'] if x['labels']['alertname']=='HighCPUUsage'];print(a[0] if a else 'inactive')")
+            cpu=$(curl -sG 'localhost:9090/api/v1/query' --data-urlencode 'query=sum(rate(container_cpu_usage_seconds_total{namespace="default"}[5m]))' | python3 -c "import sys,json;r=json.load(sys.stdin).get('data',{}).get('result',[]);print(round(float(r[0]['value'][1]),3) if r else 0)" || echo 0)
+            st=$(curl -s localhost:9090/api/v1/alerts | python3 -c "import sys,json;a=[x['state'] for x in json.load(sys.stdin).get('data',{}).get('alerts',[]) if x['labels']['alertname']=='HighCPUUsage'];print(a[0] if a else 'inactive')" || echo inactive)
             echo "$(date -u +%T) cpu_cores=$cpu  HighCPUUsage=$st" | tee -a logs4/07-alert-log.txt
             [ "$st" = "firing" ] && break; sleep 15; done
           echo "=== Prometheus /api/v1/alerts ===" | tee -a logs4/07-alert-log.txt
