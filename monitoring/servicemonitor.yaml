@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: java-app-monitor
+  namespace: default
+  labels:
+    release: monitoring        # kube-prometheus-stack тек осы label-і бар ServiceMonitor-ларды оқиды
+spec:
+  selector:
+    matchLabels:
+      app: java-redis-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: app-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring        # Prometheus тек осы label-і бар ережелерді жүктейді
+spec:
+  groups:
+    - name: app-alerts
+      rules:
+        - alert: HighCPUUsage
+          expr: sum(rate(container_cpu_usage_seconds_total{namespace="default"}[5m])) > 0.8
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CPU жүктемесі жоғары"
+            description: "default namespace CPU қолдануы 0.8 ядродан асты (қазіргі мәні: {{ $value }})"

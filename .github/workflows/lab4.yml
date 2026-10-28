@@ -1,0 +1,140 @@
+name: Lab-4 Prometheus + Grafana monitoring
+on: workflow_dispatch
+jobs:
+  lab4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p shots4 logs4
+
+      - name: "0. Create kind cluster"
+        uses: helm/kind-action@v1
+        with: { cluster_name: lab4 }
+
+      - name: "0. Deploy Java+Redis app (with /metrics)"
+        run: |
+          docker build -q --build-arg APP_VERSION=v2 -t java-app:v2 app
+          kind load docker-image java-app:v2 --name lab4
+          kubectl apply -f k8s/
+          kubectl rollout status deploy/java-app --timeout=180s
+          kubectl rollout status deploy/redis --timeout=180s
+          kubectl get deploy,svc,pods -o wide
+          kubectl get svc java-app --show-labels
+
+      - name: "1. Helm repo add + install kube-prometheus-stack"
+        run: |
+          helm version
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace --wait --timeout 15m
+          helm list -n monitoring
+
+      - name: "2. kubectl get pods -n monitoring"
+        run: |
+          kubectl get pods -n monitoring -o wide | tee logs4/02-pods.txt
+
+      - name: "3. Grafana: port-forward + admin password from secret"
+        run: |
+          kubectl get secret -n monitoring monitoring-grafana
+          PW=$(kubectl get secret -n monitoring monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d)
+          echo "::add-mask::$PW"
+          echo "GF_PW=$PW" >> $GITHUB_ENV
+          echo "Grafana login: admin / (password taken from secret monitoring-grafana, key admin-password)"
+          kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring >/dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -s localhost:3000/api/health && break; sleep 2; done
+
+      - name: "4. Import dashboard ID 315 (Kubernetes cluster monitoring)"
+        run: |
+          curl -s https://grafana.com/api/dashboards/315/revisions/latest/download -o d315.json
+          python3 -c "import json;print('Dashboard:', json.load(open('d315.json'))['title'])"
+          python3 - <<'PY'
+          import json
+          d=json.load(open('d315.json')); d.pop('id',None)
+          body={"dashboard":d,"overwrite":True,"folderId":0,
+                "inputs":[{"name":"DS_PROMETHEUS","type":"datasource","pluginId":"prometheus","value":"prometheus"}]}
+          json.dump(body,open('import.json','w'))
+          PY
+          curl -s -u "admin:$GF_PW" -H "Content-Type: application/json" -X POST localhost:3000/api/dashboards/import -d @import.json | tee logs4/04-import.json
+          echo
+          echo "URL315=$(python3 -c "import json;print(json.load(open('logs4/04-import.json'))['importedUrl'])")" >> $GITHUB_ENV
+          NS=$(curl -s -u "admin:$GF_PW" "localhost:3000/api/search?query=Namespace%20(Pods)" | python3 -c "import sys,json;r=json.load(sys.stdin);print(r[0]['url'] if r else '/dashboards')")
+          echo "URLNS=$NS" >> $GITHUB_ENV
+          curl -s -u "admin:$GF_PW" "localhost:3000/api/search?type=dash-db" | python3 -c "import sys,json;[print(' -',x['title']) for x in json.load(sys.stdin)]"
+
+      - name: "5. ServiceMonitor for Java app + verify in Prometheus"
+        run: |
+          cat monitoring/servicemonitor.yaml
+          kubectl apply -f monitoring/servicemonitor.yaml
+          kubectl get servicemonitor -n default
+          kubectl port-forward svc/java-app 8080:8080 >/dev/null 2>&1 &
+          sleep 3
+          for i in $(seq 1 40); do curl -s localhost:8080/ >/dev/null; done
+          echo "=== curl /metrics ==="; curl -s localhost:8080/metrics | tee logs4/05-metrics.txt
+          kubectl port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 -n monitoring >/dev/null 2>&1 &
+          sleep 3
+          for i in $(seq 1 30); do
+            up=$(curl -s 'localhost:9090/api/v1/query?query=up{job="java-app"}' | python3 -c "import sys,json;r=json.load(sys.stdin)['data']['result'];print(len(r))")
+            echo "[$i] java-app targets found: $up"; [ "$up" -gt 0 ] && break; sleep 10; done
+          echo "=== Prometheus: up{job=\"java-app\"} ==="
+          curl -s 'localhost:9090/api/v1/query?query=up{job="java-app"}' | python3 -m json.tool | tee logs4/05-up.json
+          echo "=== Prometheus: app_http_requests_total ==="
+          curl -s 'localhost:9090/api/v1/query?query=app_http_requests_total' | python3 -m json.tool
+
+      - name: "6. Alert rule (PrometheusRule) HighCPUUsage"
+        run: |
+          cat monitoring/alert-rules.yaml
+          kubectl apply -f monitoring/alert-rules.yaml
+          kubectl get prometheusrule -n monitoring app-alerts
+          for i in $(seq 1 20); do
+            n=$(curl -s localhost:9090/api/v1/rules | python3 -c "import sys,json;g=json.load(sys.stdin)['data']['groups'];print(sum(1 for x in g for r in x['rules'] if r['name']=='HighCPUUsage'))")
+            echo "[$i] rule loaded: $n"; [ "$n" -gt 0 ] && break; sleep 10; done
+
+      - name: "7. Load generator + wait for alert FIRING"
+        run: |
+          cat monitoring/load-generator.sh
+          bash monitoring/load-generator.sh
+          kubectl wait --for=condition=Ready pod/load-generator --timeout=120s
+          kubectl get pods -o wide
+          echo "=== Alert state timeline ===" | tee logs4/07-alert-log.txt
+          for i in $(seq 1 60); do
+            cpu=$(curl -s 'localhost:9090/api/v1/query' --data-urlencode 'query=sum(rate(container_cpu_usage_seconds_total{namespace="default"}[5m]))' | python3 -c "import sys,json;r=json.load(sys.stdin)['data']['result'];print(round(float(r[0]['value'][1]),3) if r else 0)")
+            st=$(curl -s localhost:9090/api/v1/alerts | python3 -c "import sys,json;a=[x['state'] for x in json.load(sys.stdin)['data']['alerts'] if x['labels']['alertname']=='HighCPUUsage'];print(a[0] if a else 'inactive')")
+            echo "$(date -u +%T) cpu_cores=$cpu  HighCPUUsage=$st" | tee -a logs4/07-alert-log.txt
+            [ "$st" = "firing" ] && break; sleep 15; done
+          echo "=== Prometheus /api/v1/alerts ===" | tee -a logs4/07-alert-log.txt
+          curl -s localhost:9090/api/v1/alerts | python3 -m json.tool | tee -a logs4/07-alert-log.txt
+          kubectl port-forward svc/monitoring-kube-prometheus-alertmanager 9093:9093 -n monitoring >/dev/null 2>&1 &
+          sleep 20
+          echo "=== Alertmanager /api/v2/alerts (HighCPUUsage) ===" | tee -a logs4/07-alert-log.txt
+          curl -s localhost:9093/api/v2/alerts | python3 -c "
+          import sys,json
+          for a in json.load(sys.stdin):
+              if a['labels'].get('alertname')=='HighCPUUsage':
+                  print(json.dumps({k:a[k] for k in ('labels','annotations','startsAt','status')},indent=2,ensure_ascii=False))
+          " | tee -a logs4/07-alert-log.txt
+          echo "=== Prometheus pod log (rule evaluation) ==="
+          kubectl logs -n monitoring prometheus-monitoring-kube-prometheus-prometheus-0 -c prometheus --tail=15 || true
+
+      - name: "8. Screenshots (Grafana, Prometheus, Alertmanager)"
+        run: |
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+          python ci/lab4_screens.py grafana "$GF_PW|$URL315|$URLNS" || true
+          python ci/lab4_screens.py prom || true
+          python ci/lab4_screens.py am || true
+          ls -la shots4
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl get servicemonitor,prometheusrule -A || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab4-results
+          path: |
+            shots4/
+            logs4/
