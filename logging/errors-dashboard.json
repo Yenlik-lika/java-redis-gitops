@@ -1,0 +1,40 @@
+{
+  "dashboard": {
+    "title": "Java app — Errors from logs (Loki)",
+    "uid": "java-app-errors",
+    "time": { "from": "now-30m", "to": "now" },
+    "refresh": "10s",
+    "panels": [
+      {
+        "type": "stat", "title": "ERROR логтары (соңғы 30 мин)",
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [{ "refId": "A", "expr": "sum(count_over_time({namespace=\"default\", app=\"java-redis-app\"} |= \"level=ERROR\" [30m]))", "queryType": "instant" }],
+        "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      },
+      {
+        "type": "timeseries", "title": "Минут сайынғы қате саны (ERROR / min)",
+        "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [{ "refId": "A", "expr": "sum(count_over_time({namespace=\"default\", app=\"java-redis-app\"} |= \"level=ERROR\" [1m]))", "legendFormat": "errors" }],
+        "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" }, "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] }
+      },
+      {
+        "type": "timeseries", "title": "Деңгей бойынша логтар саны (INFO / WARN / ERROR)",
+        "gridPos": { "h": 7, "w": 24, "x": 0, "y": 6 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [{ "refId": "A", "expr": "sum by (level) (count_over_time({namespace=\"default\", app=\"java-redis-app\"} | logfmt | level=~\"INFO|WARN|ERROR\" [1m]))", "legendFormat": "{{level}}" }]
+      },
+      {
+        "type": "logs", "title": "Соңғы қате логтары",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 13 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [{ "refId": "A", "expr": "{namespace=\"default\", app=\"java-redis-app\"} |= \"level=ERROR\"" }],
+        "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+      }
+    ],
+    "schemaVersion": 30
+  },
+  "overwrite": true
+}

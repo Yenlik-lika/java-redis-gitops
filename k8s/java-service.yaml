@@ -6,7 +6,7 @@ metadata:
     app: java-redis-app        # ServiceMonitor осы label бойынша табады
 spec:
   selector:
-    app: java-app
+    app: java-redis-app
   ports:
     - name: http               # ServiceMonitor осы порт атауын қолданады
       port: 8080

@@ -71,7 +71,7 @@ jobs:
             echo "[$i] image=$img"; [ "$img" = "java-app:v2" ] && break; sleep 10; done
           kubectl rollout status deploy/java-app --timeout=180s
           argocd app history java-redis-app
-          kubectl get pods -l app=java-app -o wide
+          kubectl get pods -l app=java-redis-app -o wide
           python ci/screens.py "$ARGO_PW" || true
 
       - name: "6. Self-heal demo (replicas 2 -> 5 -> auto 2)"

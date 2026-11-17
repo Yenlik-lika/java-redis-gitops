@@ -1,0 +1,124 @@
+name: Lab-5 Loki + Promtail centralized logging
+on: workflow_dispatch
+jobs:
+  lab5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p shots5 logs5
+
+      - name: "0. Prepare host (inotify limits for Promtail)"
+        run: sudo sysctl -w fs.inotify.max_user_instances=1024 fs.inotify.max_user_watches=1048576
+      - name: "0. Create kind cluster"
+        uses: helm/kind-action@v1
+        with: { cluster_name: lab5 }
+
+      - name: "0. Deploy Java+Redis app (structured logs + /error endpoint)"
+        run: |
+          docker build -q --build-arg APP_VERSION=v2 -t java-app:v2 app
+          kind load docker-image java-app:v2 --name lab5
+          kubectl apply -f k8s/
+          kubectl rollout status deploy/java-app --timeout=180s
+          kubectl rollout status deploy/redis --timeout=180s
+          kubectl get pods -o wide --show-labels
+
+      - name: "1. Install Loki stack (helm)"
+        run: |
+          cat logging/install-loki.sh
+          bash logging/install-loki.sh
+          helm list -n logging
+          kubectl -n logging rollout status deploy/loki-grafana --timeout=600s
+          kubectl -n logging rollout status statefulset/loki --timeout=600s
+          kubectl -n logging rollout status daemonset/loki-promtail --timeout=600s
+
+      - name: "2. kubectl get pods -n logging"
+        run: kubectl get pods -n logging -o wide | tee logs5/02-pods.txt
+
+      - name: "3. Grafana port-forward + Loki data source"
+        run: |
+          PW=$(kubectl get secret -n logging loki-grafana -o jsonpath="{.data.admin-password}" | base64 -d)
+          echo "::add-mask::$PW"; echo "GF_PW=$PW" >> $GITHUB_ENV
+          echo "Grafana: admin / password from secret loki-grafana (key admin-password)"
+          kubectl port-forward svc/loki-grafana 3000:80 -n logging >/dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -s localhost:3000/api/health && break; sleep 2; done
+          echo
+          echo "=== Data sources before ==="
+          curl -s -u "admin:$PW" localhost:3000/api/datasources | python3 -c "import sys,json;[print(' -',x['name'],x['type'],x['url'],'uid=',x['uid']) for x in json.load(sys.stdin)]"
+          if ! curl -s -u "admin:$PW" localhost:3000/api/datasources | grep -q '"type":"loki"'; then
+            echo "Loki data source not found -> adding"; cat logging/grafana-loki-datasource.json
+            curl -s -u "admin:$PW" -H "Content-Type: application/json" -X POST localhost:3000/api/datasources -d @logging/grafana-loki-datasource.json; echo
+          else
+            echo "Loki data source exists (provisioned by loki-stack, url http://loki:3100)"
+          fi
+          echo "=== Data sources after ===" | tee logs5/03-datasources.txt
+          curl -s -u "admin:$PW" localhost:3000/api/datasources | python3 -c "import sys,json;[print(' -',x['name'],x['type'],x['url'],'uid=',x['uid']) for x in json.load(sys.stdin)]" | tee -a logs5/03-datasources.txt
+          UID_=$(curl -s -u "admin:$PW" localhost:3000/api/datasources | python3 -c "import sys,json;print([x['uid'] for x in json.load(sys.stdin) if x['type']=='loki'][0])")
+          echo "LOKI_UID=$UID_" >> $GITHUB_ENV
+          kubectl port-forward svc/loki 3100:3100 -n logging >/dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -s localhost:3100/ready | grep -q ready && break; sleep 2; done
+          echo "=== Loki /ready ==="; curl -s localhost:3100/ready; echo
+          echo "=== Loki labels ==="; curl -s localhost:3100/loki/api/v1/labels; echo
+
+      - name: "4. Generate traffic + ERROR logs (500 on /error)"
+        run: |
+          kubectl port-forward svc/java-app 8080:8080 >/dev/null 2>&1 &
+          sleep 4
+          echo "ERR_START=$(date +%s%N)" >> $GITHUB_ENV
+          echo "ERR_START_MS=$(date +%s%3N)" >> $GITHUB_ENV
+          for round in 1 2 3 4; do
+            for i in $(seq 1 10); do curl -s -o /dev/null localhost:8080/; done
+            for i in $(seq 1 $((round*2))); do curl -s -o /dev/null -w "GET /error -> HTTP %{http_code}\n" localhost:8080/error; done
+            sleep 30
+          done
+          echo "ERR_END=$(date +%s%N)" >> $GITHUB_ENV
+          echo "ERR_END_MS=$(date +%s%3N)" >> $GITHUB_ENV
+          echo "=== kubectl logs (last lines) ==="
+          kubectl logs -l app=java-redis-app --tail=20 --prefix | tee logs5/04-kubectl-logs.txt
+
+      - name: "5. LogQL: search Java app logs in Loki"
+        run: |
+          for i in $(seq 1 30); do
+            n=$(python3 ci/logql.py '{namespace="default", app="java-redis-app"}' 30 5 | grep -c '^    ' || true)
+            echo "[$i] lines found: $n"; [ "$n" -gt 0 ] && break; sleep 10; done
+          python3 ci/logql.py '{namespace="default", app="java-redis-app"}' 30 10 | tee logs5/05-logql.txt
+
+      - name: "6. LogQL: find ERROR / 500 logs"
+        run: |
+          python3 ci/logql.py '{namespace="default", app="java-redis-app"} |= "level=ERROR"' 30 10 | tee -a logs5/05-logql.txt
+          python3 ci/logql.py '{namespace="default", app="java-redis-app"} | logfmt | status="500"' 30 5 | tee -a logs5/05-logql.txt
+          python3 ci/logql.py '{namespace="default", app="java-redis-app"} |~ "Exception"' 30 5 | tee -a logs5/05-logql.txt
+
+      - name: "7. LogQL: filter by time range + level"
+        run: |
+          echo "Time range: $(date -u -d @$((ERR_START/1000000000)) +%T) - $(date -u -d @$((ERR_END/1000000000)) +%T) UTC" | tee -a logs5/05-logql.txt
+          python3 ci/logql.py '{namespace="default", app="java-redis-app"} | logfmt | level="ERROR"' "$ERR_START:$ERR_END" 20 | tee -a logs5/05-logql.txt
+          python3 ci/logql.py 'sum by (level) (count_over_time({namespace="default", app="java-redis-app"} | logfmt | level=~"INFO|WARN|ERROR" [5m]))' 30 | tee -a logs5/05-logql.txt
+
+      - name: "8. Grafana dashboard panel: error count from logs"
+        run: |
+          python3 ci/logql.py 'sum(count_over_time({namespace="default", app="java-redis-app"} |= "level=ERROR" [1m]))' 30 | tee -a logs5/05-logql.txt
+          sed "s/__LOKI_UID__/$LOKI_UID/g" logging/errors-dashboard.json > /tmp/dash.json
+          curl -s -u "admin:$GF_PW" -H "Content-Type: application/json" -X POST localhost:3000/api/dashboards/db -d @/tmp/dash.json | tee logs5/08-dashboard.json; echo
+
+      - name: "9. Screenshots"
+        run: |
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+          python ci/lab5_screens.py "$GF_PW" "$ERR_START_MS" "$ERR_END_MS" || true
+          ls -la shots5
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl -n logging describe pods | tail -60 || true
+          kubectl -n logging logs daemonset/loki-promtail --tail=30 || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab5-results
+          path: |
+            shots5/
+            logs5/

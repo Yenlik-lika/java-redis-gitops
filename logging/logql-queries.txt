@@ -1,0 +1,20 @@
+# 1. Java қолданбасының барлық логтары
+{namespace="default", app="java-redis-app"}
+
+# 2. Тек қате (ERROR) логтары — мәтін бойынша сүзгі
+{namespace="default", app="java-redis-app"} |= "level=ERROR"
+
+# 3. Деңгей бойынша сүзгі — logfmt парсерімен level өрісін шығарып алу
+{namespace="default", app="java-redis-app"} | logfmt | level="ERROR"
+
+# 4. 500 қатесі бар логтар (status=500)
+{namespace="default", app="java-redis-app"} | logfmt | status="500"
+
+# 5. Stack trace жолдары (Exception сөзі бар)
+{namespace="default", app="java-redis-app"} |~ "Exception|at kz\\.devops"
+
+# 6. Минут сайынғы қате саны (dashboard панелі үшін)
+sum(count_over_time({namespace="default", app="java-redis-app"} |= "level=ERROR" [1m]))
+
+# 7. Деңгей бойынша логтар саны
+sum by (level) (count_over_time({namespace="default", app="java-redis-app"} | logfmt | level=~"INFO|WARN|ERROR" [5m]))
