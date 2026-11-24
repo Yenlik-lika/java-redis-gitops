@@ -9,6 +9,8 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -27,9 +29,29 @@ public final class App {
         System.out.flush();
     }
 
+    /** Vault Agent инжекциялаған файлдан Redis құпиясөзін оқу (REDIS_PASSWORD=...). Файл болмаса — null. */
+    static String readVaultPassword(String file) {
+        try {
+            for (String line : Files.readAllLines(Path.of(file))) {
+                if (line.startsWith("REDIS_PASSWORD=")) {
+                    return line.substring("REDIS_PASSWORD=".length()).trim();
+                }
+            }
+        } catch (IOException e) {
+            log("WARN", "Vault secret file not found: " + file + " (running without Redis password)");
+        }
+        return null;
+    }
+
     public static void main(String[] args) throws Exception {
         String host = System.getenv().getOrDefault("REDIS_HOST", "localhost");
         int port = Integer.parseInt(System.getenv().getOrDefault("REDIS_PORT", "6379"));
+        String secretFile = System.getenv().getOrDefault("REDIS_SECRET_FILE", "/vault/secrets/redis");
+        String password = readVaultPassword(secretFile);
+        if (password != null) {
+            // Құпиясөздің өзін логқа жазбаймыз — тек ұзындығын
+            log("INFO", "Redis password loaded from " + secretFile + " (length=" + password.length() + ")");
+        }
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
         server.createContext("/health", ex -> reply(ex, 200, "OK", "text/plain"));
         server.createContext("/metrics", ex -> reply(ex, 200, metrics(), "text/plain; version=0.0.4"));
@@ -49,6 +71,9 @@ public final class App {
         server.createContext("/", ex -> {
             REQUESTS.incrementAndGet();
             try (Jedis jedis = new Jedis(host, port)) {
+                if (password != null) {
+                    jedis.auth(password);
+                }
                 long hits = jedis.incr("hits");
                 log("INFO", "method=GET path=/ status=200 visits=" + hits);
                 reply(ex, 200, "Java+Redis " + VERSION + " | visits: " + hits, "text/plain");

@@ -1,0 +1,119 @@
+name: Lab-6 HashiCorp Vault secrets management
+on: workflow_dispatch
+jobs:
+  lab6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p shots6 logs6
+
+      - name: "0. Create kind cluster"
+        uses: helm/kind-action@v1
+        with: { cluster_name: lab6 }
+
+      - name: "0. Build Java app (reads password from /vault/secrets/redis)"
+        run: |
+          docker build -q --build-arg APP_VERSION=v2 -t java-app:v2 app
+          kind load docker-image java-app:v2 --name lab6
+
+      - name: "1. Install Vault via Helm (dev mode)"
+        run: |
+          cat vault/install-vault.sh
+          bash vault/install-vault.sh
+          kubectl wait --for=condition=Ready pod/vault-0 --timeout=300s
+          kubectl rollout status deploy/vault-agent-injector --timeout=300s
+          kubectl get pods,svc -l 'app.kubernetes.io/instance=vault' -o wide | tee logs6/01-vault-pods.txt
+
+      - name: "2-3. vault status, login, kv put + Kubernetes auth, policy, role"
+        run: |
+          cat vault/configure-vault.sh
+          bash vault/configure-vault.sh 2>&1 | tee logs6/02-configure.txt
+          kubectl exec vault-0 -- vault kv put secret/other-app api_key="NotForJavaApp" >/dev/null
+
+      - name: "4. Deploy Java + Redis with Vault Agent annotations"
+        run: |
+          cat vault/serviceaccounts.yaml vault/java-deployment.yaml vault/redis-deployment.yaml
+          kubectl apply -f vault/serviceaccounts.yaml
+          kubectl apply -f k8s/java-service.yaml -f k8s/redis-service.yaml
+          kubectl apply -f vault/redis-deployment.yaml
+          kubectl rollout status deploy/redis --timeout=300s
+          kubectl apply -f vault/java-deployment.yaml
+          kubectl rollout status deploy/java-app --timeout=300s
+          echo "=== Pods (READY 2/2 = app container + vault-agent sidecar) ===" | tee logs6/04-pods.txt
+          kubectl get pods -o wide | tee -a logs6/04-pods.txt
+          P=$(kubectl get pod -l app=java-redis-app -o jsonpath='{.items[0].metadata.name}')
+          echo "JAVA_POD=$P" >> $GITHUB_ENV
+          echo "=== Containers injected into $P ===" | tee -a logs6/04-pods.txt
+          kubectl get pod $P -o jsonpath='init: {.spec.initContainers[*].name}{"\n"}containers: {.spec.containers[*].name}{"\n"}' | tee -a logs6/04-pods.txt
+
+      - name: "5. Check /vault/secrets/redis inside the pod"
+        run: |
+          echo "\$ kubectl exec $JAVA_POD -c java-app -- ls -l /vault/secrets/" | tee logs6/05-secret-file.txt
+          kubectl exec $JAVA_POD -c java-app -- ls -l /vault/secrets/ | tee -a logs6/05-secret-file.txt
+          echo "\$ kubectl exec $JAVA_POD -c java-app -- cat /vault/secrets/redis" | tee -a logs6/05-secret-file.txt
+          kubectl exec $JAVA_POD -c java-app -- cat /vault/secrets/redis | tee -a logs6/05-secret-file.txt
+          echo | tee -a logs6/05-secret-file.txt
+          echo "=== Kubernetes Secrets in default namespace (password is NOT stored here) ===" | tee -a logs6/05-secret-file.txt
+          kubectl get secrets -n default | tee -a logs6/05-secret-file.txt
+          kubectl get secrets -n default -o yaml | grep -c MySecretPass123 | xargs -I{} echo "occurrences of the password in k8s Secrets: {}" | tee -a logs6/05-secret-file.txt
+
+      - name: "6. App reads password from the file and uses it for Redis"
+        run: |
+          echo "=== Java app log ===" | tee logs6/06-app.txt
+          kubectl logs $JAVA_POD -c java-app | head -5 | tee -a logs6/06-app.txt
+          R=$(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
+          echo "=== redis-cli WITHOUT password ===" | tee -a logs6/06-app.txt
+          kubectl exec $R -c redis -- redis-cli ping 2>&1 | tee -a logs6/06-app.txt
+          echo "=== redis-cli WITH password from /vault/secrets/redis ===" | tee -a logs6/06-app.txt
+          kubectl exec $R -c redis -- sh -c '. /vault/secrets/redis && REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping' | tee -a logs6/06-app.txt
+          kubectl port-forward svc/java-app 8080:8080 >/dev/null 2>&1 &
+          sleep 4
+          echo "=== HTTP requests to the app ===" | tee -a logs6/06-app.txt
+          for i in 1 2 3; do curl -s localhost:8080/ | tee -a logs6/06-app.txt; echo | tee -a logs6/06-app.txt; done
+          kubectl logs -l app=java-redis-app -c java-app --tail=3 | tee -a logs6/06-app.txt
+
+      - name: "7. Policy test: only app-role (java-app / redis SA) can read"
+        run: |
+          {
+          echo "=== 1) Login with ServiceAccount java-app -> role app-role ==="
+          JWT=$(kubectl create token java-app)
+          kubectl exec vault-0 -- vault write -format=json auth/kubernetes/login role=app-role jwt="$JWT" \
+            | python3 -c "import sys,json;a=json.load(sys.stdin)['auth'];print('SUCCESS  policies =',a['policies'],' ttl =',a['lease_duration'],'s  metadata =',a['metadata'])"
+          T=$(kubectl exec vault-0 -- vault write -field=token auth/kubernetes/login role=app-role jwt="$JWT")
+          echo "::add-mask::$T"
+          echo; echo "=== 2) READ secret/redis-app with this token (allowed) ==="
+          kubectl exec vault-0 -- env VAULT_TOKEN="$T" vault kv get -field=password secret/redis-app && echo "  -> OK"
+          echo; echo "=== 3) WRITE secret/redis-app with this token (must be denied) ==="
+          kubectl exec vault-0 -- env VAULT_TOKEN="$T" vault kv put secret/redis-app password=hacked 2>&1 | tail -4 || true
+          echo; echo "=== 4) READ secret/other-app with this token (must be denied) ==="
+          kubectl exec vault-0 -- env VAULT_TOKEN="$T" vault kv get secret/other-app 2>&1 | tail -4 || true
+          echo; echo "=== 5) Login with ServiceAccount 'default' -> role app-role (must be denied) ==="
+          JWT2=$(kubectl create token default)
+          kubectl exec vault-0 -- vault write auth/kubernetes/login role=app-role jwt="$JWT2" 2>&1 | tail -4 || true
+          } 2>&1 | tee logs6/07-policy-test.txt
+
+      - name: "8. Screenshots (Vault UI)"
+        run: |
+          kubectl port-forward svc/vault 8200:8200 >/dev/null 2>&1 &
+          sleep 4
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+          python ci/lab6_screens.py || true
+          ls -la shots6
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl describe pods -l app=java-redis-app | tail -40 || true
+          kubectl logs -l app=java-redis-app -c vault-agent-init --tail=30 || true
+          kubectl logs -l app=redis -c vault-agent-init --tail=30 || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab6-results
+          path: |
+            shots6/
+            logs6/

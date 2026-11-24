@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-app
+  labels:
+    app: java-redis-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: java-redis-app
+  template:
+    metadata:
+      labels:
+        app: java-redis-app
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "app-role"
+        # KV v2: API жолы secret/data/redis-app (CLI-дағы secret/redis-app-ке сәйкес)
+        vault.hashicorp.com/agent-inject-secret-redis: "secret/data/redis-app"
+        # Файл форматы: REDIS_PASSWORD=<құпиясөз>
+        vault.hashicorp.com/agent-inject-template-redis: |
+          {{- with secret "secret/data/redis-app" -}}
+          REDIS_PASSWORD={{ .Data.data.password }}
+          {{- end }}
+    spec:
+      serviceAccountName: java-app
+      containers:
+        - name: java-app
+          image: java-app:v2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_SECRET_FILE
+              value: /vault/secrets/redis
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5

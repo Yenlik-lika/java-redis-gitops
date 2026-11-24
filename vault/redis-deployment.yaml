@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "app-role"
+        vault.hashicorp.com/agent-inject-secret-redis: "secret/data/redis-app"
+        vault.hashicorp.com/agent-inject-template-redis: |
+          {{- with secret "secret/data/redis-app" -}}
+          REDIS_PASSWORD={{ .Data.data.password }}
+          {{- end }}
+    spec:
+      serviceAccountName: redis
+      containers:
+        - name: redis
+          image: redis:7
+          # Redis құпиясөзін де Vault файлынан алады — манифестте құпиясөз жоқ
+          command: ["sh", "-c", ". /vault/secrets/redis && exec redis-server --requirepass \"$REDIS_PASSWORD\""]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
