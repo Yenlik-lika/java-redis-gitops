@@ -98,7 +98,13 @@ jobs:
           kubectl port-forward svc/vault 8200:8200 >/dev/null 2>&1 &
           sleep 4
           pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
-          python ci/lab6_screens.py || true
+          # root token is not stored by the Vault UI after a page reload -> use a full-access non-root token
+          kubectl exec -i vault-0 -- vault policy write ui-admin - <<'EOF'
+          path "*" { capabilities = ["create","read","update","delete","list","sudo"] }
+          EOF
+          UI_TOKEN=$(kubectl exec vault-0 -- vault token create -policy=ui-admin -field=token)
+          echo "::add-mask::$UI_TOKEN"
+          VAULT_UI_TOKEN="$UI_TOKEN" python ci/lab6_screens.py 2>&1 | tee logs6/08-screens-debug.txt || true
           ls -la shots6
 
       - name: Diagnostics on failure
