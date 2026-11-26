@@ -21,6 +21,8 @@ jobs:
         run: |
           cat vault/install-vault.sh
           bash vault/install-vault.sh
+          # the StatefulSet creates vault-0 a few seconds after helm returns -> wait until it exists
+          for i in $(seq 1 60); do kubectl get pod vault-0 >/dev/null 2>&1 && break; sleep 2; done
           kubectl wait --for=condition=Ready pod/vault-0 --timeout=300s
           kubectl rollout status deploy/vault-agent-injector --timeout=300s
           kubectl get pods,svc -l 'app.kubernetes.io/instance=vault' -o wide | tee logs6/01-vault-pods.txt
