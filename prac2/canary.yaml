@@ -1,0 +1,72 @@
+# 3-кезең. Deployment -> Argo Rollout (Canary 10% -> 50% -> 100%, NGINX Ingress арқылы).
+# __IMAGE__ орнына образ қойылады: <dockerhub-login>/java-app:<BUILD_NUMBER>
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-app-stable
+  labels: {tier: routing}
+spec:
+  selector: {app: java-redis-app}
+  ports: [{name: http, port: 8080}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-app-canary
+  labels: {tier: routing}
+spec:
+  selector: {app: java-redis-app}
+  ports: [{name: http, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: java-app-ingress
+  labels: {tier: routing}
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: java-app-stable, port: {number: 8080}}}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: java-redis-app
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector: {matchLabels: {app: java-redis-app}}
+  template:                      # ескі Deployment-тегі template
+    metadata:
+      labels: {app: java-redis-app}
+    spec:
+      containers:
+        - name: java-app
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: REDIS_HOST, value: redis}
+            - {name: REDIS_PORT, value: "6379"}
+          resources:             # 4-кезең: HPA үшін міндетті
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  strategy:
+    canary:
+      stableService: java-app-stable
+      canaryService: java-app-canary
+      trafficRouting:
+        nginx: {stableIngress: java-app-ingress}
+      steps:
+        - setWeight: 10
+        - pause: {}              # қолмен промоут
+        - setWeight: 50
+        - pause: {duration: 60s}

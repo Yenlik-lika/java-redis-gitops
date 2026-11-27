@@ -1,0 +1,24 @@
+# 5-кезең. Chaos Mesh эксперименттері (кезекпен қолданылады):
+#   kubectl apply -f chaos.yaml -l exp=pod-kill
+#   kubectl apply -f chaos.yaml -l exp=redis-delay
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-java
+  labels: {exp: pod-kill}
+spec:
+  action: pod-kill
+  mode: one
+  selector: {namespaces: [default], labelSelectors: {app: java-redis-app}}
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: redis-delay
+  labels: {exp: redis-delay}
+spec:
+  action: delay
+  mode: one
+  selector: {namespaces: [default], labelSelectors: {app: redis}}
+  delay: {latency: "3s"}
+  duration: "60s"

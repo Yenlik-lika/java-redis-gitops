@@ -1,0 +1,399 @@
+name: Prac-2 DevSecOps + NetworkPolicy + Canary + HPA + Chaos
+on: workflow_dispatch
+jobs:
+  prac2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GF_PW: prac2admin
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p shots logs
+
+      # ---------------- 0. Кластер (Calico CNI) ----------------
+      - name: "0. kind cluster with default CNI disabled"
+        uses: helm/kind-action@v1
+        with: { cluster_name: prac2, config: prac2/kind-calico.yaml, wait: 0s }
+
+      - name: "0. Calico CNI + metrics-server + ingress-nginx"
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/calico.yaml >/dev/null
+          kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
+          kubectl -n kube-system rollout status ds/calico-node --timeout=400s
+          kubectl wait --for=condition=Ready node --all --timeout=300s
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml >/dev/null
+          kubectl -n kube-system patch deploy metrics-server --type=json \
+            -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/cloud/deploy.yaml >/dev/null
+          kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=300s
+          kubectl -n ingress-nginx wait --for=condition=complete job --all --timeout=180s
+          kubectl -n kube-system rollout status deploy/metrics-server --timeout=300s
+          {
+            echo '$ kubectl get nodes -o wide'; kubectl get nodes -o wide
+            echo; echo '$ kubectl get pods -n kube-system -l k8s-app=calico-node'; kubectl get pods -n kube-system -l k8s-app=calico-node
+            echo; echo '$ kubectl get pods -n ingress-nginx'; kubectl get pods -n ingress-nginx
+            echo; echo '$ kubectl get deploy metrics-server -n kube-system'; kubectl get deploy metrics-server -n kube-system
+          } | tee logs/00-cluster.txt
+
+      - name: "0. Prometheus + Grafana (kube-prometheus-stack, as in Lab-4)"
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace \
+            --set grafana.adminPassword=$GF_PW --wait --timeout 15m
+          kubectl get pods -n monitoring | tee logs/00-monitoring.txt
+
+      # ---------------- 1. DevSecOps (Jenkinsfile кезеңдері) ----------------
+      - name: "1. [Jenkins] stage('Build') - image tagged with BUILD_NUMBER"
+        run: |
+          N=${{ github.run_number }}
+          echo "IMAGE=java-app:$N"         >> $GITHUB_ENV
+          echo "IMAGE_V2=java-app:$((N+1))" >> $GITHUB_ENV
+          echo "IMAGE_V3=java-app:$((N+2))" >> $GITHUB_ENV
+          cat prac2/Jenkinsfile
+          docker build -t java-app:$N        --build-arg APP_VERSION=v1     app
+          docker build -q -t java-app:$((N+1)) --build-arg APP_VERSION=v2     app
+          docker build -q -t java-app:$((N+2)) --build-arg APP_VERSION=v3-bug app
+          { echo "BUILD_NUMBER=$N  -> v1=java-app:$N, v2=java-app:$((N+1)), v3-bug=java-app:$((N+2))"; docker images java-app; } | tee logs/01-build.txt
+
+      - name: "1. Install Trivy + manual scan"
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy --version | tee logs/01-trivy-manual.txt
+          trivy image --download-db-only || trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db:2
+          echo "\$ trivy image $IMAGE" | tee -a logs/01-trivy-manual.txt
+          trivy image --skip-db-update $IMAGE 2>&1 | tee -a logs/01-trivy-manual.txt
+
+      - name: "1. [Jenkins] stage('Security Scan') - gate CRITICAL,HIGH"
+        run: |
+          set +e
+          {
+            echo "\$ trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed $IMAGE"
+            trivy image --skip-db-update --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed $IMAGE 2>&1; rc=$?
+            echo "exit code = $rc"
+            if [ $rc -eq 0 ]; then echo ">>> GATE PASSED -> stage('Push') іске қосылады"; else echo ">>> PIPELINE STOPPED: CRITICAL/HIGH осалдық"; fi
+          } | tee logs/01-trivy-gate.txt
+          {
+            echo "=== Салыстыру: осал образ redis:6.0 ==="
+            echo "\$ trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed redis:6.0"
+            trivy image --skip-db-update -q --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed redis:6.0 2>&1 | head -45; rc=${PIPESTATUS[0]}
+            echo "exit code = $rc  -> Jenkins 'Security Scan' кезеңі FAILED, Push орындалмайды"
+          } | tee logs/01-trivy-gate-redis6.txt
+          exit 0
+
+      - name: "1. [Jenkins] stage('Push') - image to cluster registry"
+        run: |
+          for t in $IMAGE $IMAGE_V2 $IMAGE_V3; do kind load docker-image $t --name prac2; done
+          docker exec prac2-control-plane crictl images | grep java-app | tee logs/01-push.txt
+
+      - name: "1. (Қосымша) SonarQube + Quality Gate"
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          docker run -d --name sonar -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true sonarqube:community
+          for i in $(seq 1 60); do curl -s localhost:9000/api/system/status | grep -q '"UP"' && break; sleep 5; done
+          curl -s -u admin:admin -X POST "localhost:9000/api/users/change_password?login=admin&previousPassword=admin&password=Admin12345!x"
+          echo "SonarQube version: $(curl -s localhost:9000/api/server/version)" | tee logs/01-sonar.txt
+          TOKEN=$(curl -s -u 'admin:Admin12345!x' -X POST "localhost:9000/api/user_tokens/generate?name=ci" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+          (cd app && mvn -B -q package sonar:sonar -Dsonar.projectKey=java-app -Dsonar.host.url=http://localhost:9000 -Dsonar.token=$TOKEN)
+          sleep 25
+          echo "=== Quality Gate ===" | tee -a logs/01-sonar.txt
+          curl -s -u "$TOKEN:" "localhost:9000/api/qualitygates/project_status?projectKey=java-app" | python3 -m json.tool | tee -a logs/01-sonar.txt
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+          python ci/sonar-shot.py && mv shots/07-sonarqube.png shots/01-sonarqube.png || true
+          docker rm -f sonar
+
+      # ---------------- 0. Қолданбаны орналастыру ----------------
+      - name: "0. Deploy Java+Redis + ServiceMonitor + Ingress"
+        run: |
+          sed "s|image: java-app:.*|image: $IMAGE|" k8s/java-deployment.yaml > /tmp/java-deployment.yaml
+          kubectl apply -f /tmp/java-deployment.yaml -f k8s/java-service.yaml -f k8s/redis-deployment.yaml -f k8s/redis-service.yaml
+          kubectl rollout status deploy/java-app --timeout=240s
+          kubectl rollout status deploy/redis --timeout=180s
+          kubectl apply -f monitoring/servicemonitor.yaml
+          sed "s|__IMAGE__|$IMAGE|" prac2/canary.yaml > /tmp/canary.yaml
+          for i in $(seq 1 10); do kubectl apply -f /tmp/canary.yaml -l tier=routing && break; sleep 10; done
+          bash ci/prac2_pf.sh
+          for i in $(seq 1 20); do curl -s -m 5 localhost:8080/ | grep -q visits && break; sleep 3; done
+          { kubectl get deploy,svc,ingress,pods -o wide; echo; echo '$ curl localhost:8080/'; curl -s localhost:8080/; echo; } | tee logs/00-app.txt
+          pip install -q playwright && python -m playwright install --with-deps chromium >/dev/null
+
+      # ---------------- 2. NetworkPolicy ----------------
+      - name: "2. Before policies: foreign pod reaches Redis"
+        run: |
+          { echo '$ kubectl run attacker --image=redis:7 --rm -i --restart=Never -- redis-cli -h redis -p 6379 ping'
+            kubectl run attacker --image=redis:7 --rm -i --restart=Never -- timeout 15 redis-cli -h redis -p 6379 ping 2>&1 || true
+          } | tee logs/02-1-before.txt
+          for i in $(seq 1 30); do [ "$(python3 ci/promq.py 'sum(up{job="java-app"})' --value)" != "nan" ] && break; sleep 5; done
+          python3 ci/promq.py 'up{job="java-app"}' | tee -a logs/02-1-before.txt
+
+      - name: "2. Only default-deny -> find why metrics stop"
+        run: |
+          source ci/prac2_lib.sh
+          echo "T_NP0=$(now_ms)" >> $GITHUB_ENV
+          {
+            echo '$ kubectl apply -f netpol.yaml -l step=deny   (тек default-deny)'
+            kubectl apply -f prac2/netpol.yaml -l step=deny
+            echo '# Calico бар (established) қосылыстарды үзбейді, сондықтан жаңа қосылыс ашылуы үшін подтарды қайта іске қосамыз'
+            kubectl rollout restart deploy/java-app && kubectl rollout status deploy/java-app --timeout=180s
+            kubectl get networkpolicy
+            echo; echo '$ kubectl run attacker ... redis-cli -h redis -p 6379 ping'
+            kubectl run attacker-2 --image=redis:7 --rm -i --restart=Never -- timeout 10 redis-cli -h redis -p 6379 ping 2>&1 || echo ">>> PONG жоқ: 10 с timeout, қосылыс бөгелді"
+            echo; echo '$ curl -m 8 localhost:8080/   (Ingress -> app)'
+            curl -s -m 8 -o /dev/null -w 'HTTP %{http_code}\n' localhost:8080/ || echo "timeout (Ingress -> app бөгелді)"
+            echo; echo '# Prometheus -> app:8080 scrape'
+            for i in $(seq 1 24); do v=$(python3 ci/promq.py 'sum(up{job="java-app"})' --value); echo "  sum(up{job=\"java-app\"}) = $v"; [ "$v" = "0" ] && break; sleep 5; done
+            python3 ci/promq.py 'up{job="java-app"}'
+            echo '>>> СЕБЕБІ: default-deny monitoring кеңістігіндегі Prometheus-тан келетін трафикті де жабады -> метрика жиналмайды (up=0).'
+          } 2>&1 | tee logs/02-2-deny-only.txt
+
+      - name: "2. Apply full netpol.yaml -> app works, foreign pod blocked"
+        run: |
+          source ci/prac2_lib.sh
+          bash ci/prac2_pf.sh
+          {
+            echo '$ cat netpol.yaml'; cat prac2/netpol.yaml
+            echo; echo '$ kubectl apply -f netpol.yaml'; kubectl apply -f prac2/netpol.yaml
+            kubectl get networkpolicy
+            echo; echo '$ kubectl run attacker --image=redis:7 -it --rm -- redis-cli -h redis -p 6379 ping   # timeout'
+            kubectl run attacker-3 --image=redis:7 --rm -i --restart=Never -- timeout 10 redis-cli -h redis -p 6379 ping 2>&1 || echo ">>> PONG жоқ: 10 с timeout, бөгде под Redis-ке қосыла алмады"
+          } 2>&1 | tee logs/02-3-netpol.txt
+          sleep 5
+          {
+            echo '$ curl localhost:8080/  x20  (Ingress -> app -> Redis)'; codes 20
+            curl -s localhost:8080/; echo
+            echo; echo '$ kubectl logs -l app=java-redis-app --tail=20   # Redis-пен байланыс бар'
+            kubectl logs -l app=java-redis-app --tail=20 --prefix
+          } 2>&1 | tee logs/02-4-app-ok.txt
+          {
+            echo '# Prometheus метрикасы қайта жиналуда ма?'
+            for i in $(seq 1 30); do v=$(python3 ci/promq.py 'sum(up{job="java-app"})' --value); echo "  sum(up{job=\"java-app\"}) = $v"; [ "$v" != "0" ] && [ "$v" != "nan" ] && break; sleep 5; done
+            python3 ci/promq.py 'up{job="java-app"}'
+            python3 ci/promq.py 'sum(app_http_requests_total)'
+            echo '>>> ТҮЗЕТУ: allow-to-app саясаты monitoring кеңістігіне 8080 портқа рұқсат береді -> up=1.'
+          } 2>&1 | tee logs/02-5-prometheus.txt
+          echo "T_NP1=$(now_ms)" >> $GITHUB_ENV
+
+      # ---------------- 3. Canary (Argo Rollouts) ----------------
+      - name: "3. Install Argo Rollouts + kubectl plugin"
+        run: |
+          kubectl create namespace argo-rollouts
+          kubectl apply --server-side --force-conflicts -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml >/dev/null
+          curl -sLO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
+          sudo install kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
+          kubectl -n argo-rollouts rollout status deploy/argo-rollouts --timeout=240s
+          { kubectl argo rollouts version; kubectl get pods -n argo-rollouts; } | tee logs/03-0-install.txt
+
+      - name: "3. Deployment -> Rollout (canary.yaml), v1"
+        run: |
+          source ci/prac2_lib.sh
+          echo "T_CAN0=$(now_ms)" >> $GITHUB_ENV
+          {
+            echo '$ kubectl delete deployment java-app && kubectl apply -f canary.yaml'
+            kubectl delete deployment java-app && kubectl apply -f /tmp/canary.yaml
+            waitphase Healthy 60
+            kubectl argo rollouts get rollout java-redis-app
+          } 2>&1 | tee logs/03-1-rollout-v1.txt
+          setsid nohup kubectl argo rollouts dashboard >/dev/null 2>&1 &
+          bash ci/prac2_pf.sh
+          sleep 5; python ci/prac2_screens.py rollout shots/03-1-rollout-v1.png || true
+
+      - name: "3. v2: 10% -> check canary-weight -> promote -> 50% -> 100%"
+        run: |
+          source ci/prac2_lib.sh
+          {
+            echo "\$ kubectl argo rollouts set image java-redis-app java-app=$IMAGE_V2"
+            kubectl argo rollouts set image java-redis-app java-app=$IMAGE_V2
+            waitphase Paused 60
+            kubectl argo rollouts get rollout java-redis-app
+            echo; echo '$ kubectl get ingress -o yaml | grep canary-weight'; canary_weight
+            echo; echo '# 100 сұрау: жауап қай нұсқадан келді'; versions 100
+          } 2>&1 | tee logs/03-2-v2-10pct.txt
+          python ci/prac2_screens.py rollout shots/03-2-v2-10pct.png || true
+          {
+            echo '$ kubectl argo rollouts promote java-redis-app'
+            kubectl argo rollouts promote java-redis-app
+            for i in $(seq 1 24); do canary_weight | grep -q '"50"' && break; sleep 5; done
+            kubectl argo rollouts get rollout java-redis-app
+            echo; echo '$ kubectl get ingress -o yaml | grep canary-weight'; canary_weight
+            echo; echo '# 100 сұрау'; versions 100
+          } 2>&1 | tee logs/03-3-v2-50pct.txt
+          python ci/prac2_screens.py rollout shots/03-3-v2-50pct.png || true
+          {
+            echo '# pause 60s аяқталғанша күтеміз -> 100%'
+            waitphase Healthy 40
+            kubectl argo rollouts get rollout java-redis-app
+            echo; echo '# 50 сұрау'; versions 50
+          } 2>&1 | tee logs/03-4-v2-100pct.txt
+          python ci/prac2_screens.py rollout shots/03-4-v2-100pct.png || true
+
+      - name: "3. v3-bug: 10% canary -> errors -> abort (rollback)"
+        run: |
+          source ci/prac2_lib.sh
+          {
+            echo "\$ kubectl argo rollouts set image java-redis-app java-app=$IMAGE_V3   (v3-bug)"
+            kubectl argo rollouts set image java-redis-app java-app=$IMAGE_V3
+            waitphase Paused 60
+            kubectl argo rollouts get rollout java-redis-app
+            echo; canary_weight
+            echo; echo '# 200 сұрау: HTTP кодтары (canary 10% қате береді)'; codes 200
+            echo; echo '# canary подының логы'
+            (kubectl logs -l app=java-redis-app --tail=200 --prefix | grep ERROR || true) | tail -5
+          } 2>&1 | tee logs/03-5-v3-bug.txt
+          python ci/prac2_screens.py rollout shots/03-5-v3-bug-10pct.png || true
+          {
+            echo '$ kubectl argo rollouts abort java-redis-app   # трафик 100% stable-ге оралады'
+            kubectl argo rollouts abort java-redis-app
+            sleep 15
+            kubectl argo rollouts get rollout java-redis-app
+            echo; echo '$ kubectl get ingress -o yaml | grep canary-weight'; canary_weight
+            echo; echo '# 200 сұрау abort-тан кейін'; codes 200
+            versions 20
+          } 2>&1 | tee logs/03-6-abort.txt
+          python ci/prac2_screens.py rollout shots/03-6-abort.png || true
+          {
+            echo "# Rollout-ты тұрақты v2-ге қайтару: kubectl argo rollouts set image java-redis-app java-app=$IMAGE_V2"
+            kubectl argo rollouts set image java-redis-app java-app=$IMAGE_V2
+            waitphase Healthy 40
+            kubectl argo rollouts get rollout java-redis-app
+          } 2>&1 | tee logs/03-7-back-to-v2.txt
+          echo "T_CAN1=$(now_ms)" >> $GITHUB_ENV
+
+      # ---------------- 4. HPA + k6 ----------------
+      - name: "4. HPA + k6 load test (50 VU, 3m)"
+        run: |
+          curl -sL https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz | tar xz
+          sudo mv k6-v0.54.0-linux-amd64/k6 /usr/local/bin/ && k6 version
+          NODE_IP=$(kubectl get node prac2-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+          NP=$(kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+          echo "BASE_URL=http://$NODE_IP:$NP/" >> $GITHUB_ENV
+          export BASE_URL=http://$NODE_IP:$NP/
+          {
+            echo '$ kubectl get rollout java-redis-app -o yaml | grep -A6 resources'
+            kubectl get rollout java-redis-app -o yaml | grep -A6 'resources:'
+            echo; echo '$ cat hpa.yaml'; cat prac2/hpa.yaml
+            echo; echo '$ kubectl apply -f hpa.yaml'; kubectl apply -f prac2/hpa.yaml
+          } 2>&1 | tee logs/04-1-hpa.txt
+          for i in $(seq 1 30); do kubectl get hpa java-app-hpa --no-headers | grep -q unknown || break; sleep 5; done
+          kubectl get hpa java-app-hpa | tee -a logs/04-1-hpa.txt
+          echo "T_HPA0=$(now_ms)" >> $GITHUB_ENV
+          timeout 230 kubectl get hpa java-app-hpa -w > logs/04-2-hpa-watch.txt 2>&1 &
+          ( for i in $(seq 1 22); do echo "$(date -u +%T)  $(kubectl get hpa java-app-hpa --no-headers | awk '{print "TARGETS="$4, "REPLICAS="$7}')  pods_running=$(kubectl get pods -l app=java-redis-app --no-headers | grep -c Running)"; sleep 10; done ) > logs/04-3-pods-timeline.txt &
+          cat prac2/load-test.js
+          echo "\$ k6 run load-test.js   (BASE_URL=$BASE_URL)" > logs/04-4-k6.txt
+          k6 run -q -e BASE_URL=$BASE_URL --summary-export logs/k6-hpa.json prac2/load-test.js 2>&1 | tee -a logs/04-4-k6.txt
+          sleep 30; wait || true
+          cat logs/04-2-hpa-watch.txt logs/04-3-pods-timeline.txt
+          { kubectl describe hpa java-app-hpa | tail -20; echo; kubectl get pods -l app=java-redis-app -o wide; } | tee logs/04-5-hpa-describe.txt
+          echo "T_HPA1=$(now_ms)" >> $GITHUB_ENV
+
+      # ---------------- 5. Chaos Engineering ----------------
+      - name: "5. Install Chaos Mesh (runtime=containerd)"
+        run: |
+          {
+            echo '$ kubectl get nodes -o wide   # CONTAINER-RUNTIME бағаны'
+            kubectl get nodes -o wide
+            echo; echo '>>> runtime = containerd -> chaosDaemon.runtime=containerd, socketPath=/run/containerd/containerd.sock'
+          } | tee logs/05-0-runtime.txt
+          helm repo add chaos-mesh https://charts.chaos-mesh.org && helm repo update
+          helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh --create-namespace \
+            --set chaosDaemon.runtime=containerd --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+            --wait --timeout 10m
+          kubectl get pods -n chaos-mesh | tee -a logs/05-0-runtime.txt
+
+      - name: "5. Baseline k6 (no chaos, 60s)"
+        run: |
+          bash ci/prac2_pf.sh
+          echo "T_CH0=$(date +%s%3N)" >> $GITHUB_ENV
+          kubectl get hpa java-app-hpa | tee logs/05-1-baseline.txt
+          k6 run -q --duration 60s -e BASE_URL=$BASE_URL --summary-export logs/k6-baseline.json prac2/load-test.js 2>&1 | tee -a logs/05-1-baseline.txt
+
+      - name: "5. PodChaos: kill one Java pod under load"
+        run: |
+          BEFORE=$(kubectl get pods -l app=java-redis-app -o jsonpath='{.items[*].metadata.name}')
+          k6 run -q --duration 75s -e BASE_URL=$BASE_URL --summary-export logs/k6-podkill.json prac2/load-test.js > logs/05-2-k6-podkill.txt 2>&1 &
+          K6=$!
+          sleep 15
+          T_KILL=$(date +%s%3N)
+          {
+            echo "$(date -u +%T)  \$ kubectl apply -f chaos.yaml -l exp=pod-kill"
+            for i in $(seq 1 10); do kubectl apply -f prac2/chaos.yaml -l exp=pod-kill && break; sleep 5; done
+            for i in $(seq 1 45); do
+              echo "$(date -u +%T)  ready=$(kubectl get rollout java-redis-app -o jsonpath='{.status.readyReplicas}')/$(kubectl get rollout java-redis-app -o jsonpath='{.spec.replicas}')  $(kubectl get pods -l app=java-redis-app --no-headers | awk '{print $1"("$2","$3")"}' | tr '\n' ' ')"
+              sleep 1
+            done
+          } 2>&1 | tee logs/05-2-podkill-timeline.txt
+          wait $K6 || true
+          { echo '$ kubectl describe podchaos pod-kill-java'; kubectl describe podchaos pod-kill-java | sed -n '/Status:/,$p' | head -40
+            echo; python3 ci/recovery.py "$BEFORE" $T_KILL; } 2>&1 | tee logs/05-3-podkill-result.txt
+          cat logs/05-2-k6-podkill.txt
+          kubectl delete -f prac2/chaos.yaml -l exp=pod-kill
+
+      - name: "5. NetworkChaos: Redis +3s delay for 60s under load"
+        run: |
+          bash ci/prac2_pf.sh
+          k6 run -q --duration 90s -e BASE_URL=$BASE_URL --summary-export logs/k6-redisdelay.json prac2/load-test.js > logs/05-4-k6-redisdelay.txt 2>&1 &
+          K6=$!
+          sleep 15
+          {
+            echo "$(date -u +%T)  \$ kubectl apply -f chaos.yaml -l exp=redis-delay"
+            for i in $(seq 1 10); do kubectl apply -f prac2/chaos.yaml -l exp=redis-delay && break; sleep 5; done
+            sleep 5
+            kubectl get networkchaos redis-delay
+            for i in $(seq 1 8); do echo "$(date -u +%T)  $(curl -s -m 10 -o /dev/null -w 'HTTP %{http_code}  time=%{time_total}s' localhost:8080/)"; sleep 6; done
+            echo; echo '# қолданба логы (Redis уақыт шегі)'
+            (kubectl logs -l app=java-redis-app --tail=300 --prefix | grep -E 'WARN|503' || true) | tail -6
+          } 2>&1 | tee logs/05-5-redisdelay-timeline.txt
+          wait $K6 || true
+          cat logs/05-4-k6-redisdelay.txt
+          kubectl delete -f prac2/chaos.yaml -l exp=redis-delay || true
+          echo "T_CH1=$(date +%s%3N)" >> $GITHUB_ENV
+          {
+            echo "=== k6: эксперимент алдында / кейін ==="
+            python3 ci/k6sum.py hpa-3m=logs/k6-hpa.json baseline=logs/k6-baseline.json pod-kill=logs/k6-podkill.json redis-delay=logs/k6-redisdelay.json
+          } | tee logs/05-6-compare.txt
+
+      # ---------------- Grafana скриншоттары ----------------
+      - name: "6. Grafana screenshots (all stages)"
+        run: |
+          bash ci/prac2_pf.sh
+          ITEMS=$(python3 - <<'PY'
+          import json, os
+          e = os.environ; pad = 60000
+          w = lambda a, b: (int(e[a]) - pad, int(e[b]) + pad)
+          np_, can, hpa, ch = w("T_NP0","T_NP1"), w("T_CAN0","T_CAN1"), w("T_HPA0","T_HPA1"), w("T_CH0","T_CH1")
+          L = [
+           ["shots/02-grafana-up.png", 'up{job="java-app"}', *np_],
+           ["shots/02-grafana-requests.png", 'sum(rate(app_http_requests_total[1m]))', *np_],
+           ["shots/03-grafana-versions.png", 'count by (version) (app_info{job="java-app"})', *can],
+           ["shots/03-grafana-http500.png", 'sum(rate(app_http_500_total[1m]))', *can],
+           ["shots/04-grafana-hpa-replicas.png", 'kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler="java-app-hpa"}', *hpa],
+           ["shots/04-grafana-cpu.png", 'sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="default",container="java-app"}[1m]))', *hpa],
+           ["shots/04-grafana-rps.png", 'sum(rate(app_http_requests_total[1m]))', *hpa],
+           ["shots/05-grafana-ready-pods.png", 'sum(kube_pod_status_ready{namespace="default",condition="true",pod=~"java-redis-app.*"})', *ch],
+           ["shots/05-grafana-redis-errors.png", 'sum(rate(app_redis_errors_total[1m]))', *ch],
+           ["shots/05-grafana-rps.png", 'sum(rate(app_http_requests_total[1m]))', *ch],
+          ]
+          print(json.dumps(L))
+          PY
+          )
+          python ci/prac2_screens.py grafana "$GF_PW" "$ITEMS" || true
+          { kubectl get all -o wide; kubectl get networkpolicy,ingress,hpa,rollout; } > logs/99-final-state.txt 2>&1
+          ls -la shots logs
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
+          kubectl argo rollouts get rollout java-redis-app || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prac2-results
+          path: |
+            shots/
+            logs/
+            prac2/

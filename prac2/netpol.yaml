@@ -1,0 +1,34 @@
+# 2-кезең. Zero-trust желі: әдепкіде бәрі жабық, тек қажетті жолдар ашық.
+# Prometheus "monitoring" кеңістігінде (kube-prometheus-stack). Басқа кеңістікте болса, атауын өзгертіңіз.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels: {step: deny}
+spec:
+  podSelector: {}            # default кеңістігіндегі БАРЛЫҚ под
+  policyTypes: [Ingress]     # кіріс трафигі тек төмендегі ережелермен рұқсат
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-redis
+  labels: {step: allow}
+spec:
+  podSelector: {matchLabels: {app: redis}}
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: java-redis-app}}}]
+      ports: [{port: 6379}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-app
+  labels: {step: allow}
+spec:
+  podSelector: {matchLabels: {app: java-redis-app}}
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+      ports: [{port: 8080}]

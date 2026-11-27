@@ -70,6 +70,13 @@ public final class App {
         });
         server.createContext("/", ex -> {
             REQUESTS.incrementAndGet();
+            // №2 практикалық: v3-bug нұсқасы әдейі қате береді (Canary abort/rollback демонстрациясы үшін)
+            if (VERSION.contains("bug")) {
+                HTTP_500.incrementAndGet();
+                log("ERROR", "method=GET path=/ status=500 error=\"bug in " + VERSION + "\"");
+                reply(ex, 500, "Java+Redis " + VERSION + " | ERROR 500", "text/plain");
+                return;
+            }
             try (Jedis jedis = new Jedis(host, port)) {
                 if (password != null) {
                     jedis.auth(password);

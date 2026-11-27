@@ -1,0 +1,8 @@
+# kind кластері: әдепкі CNI (kindnet) өшірулі, оның орнына Calico қойылады.
+# kindnet NetworkPolicy-ді орындамайды, Calico орындайды.
+# (Minikube-те бұл: minikube start --cpus=2 --memory=6144 --cni=calico)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: true
+  podSubnet: 192.168.0.0/16

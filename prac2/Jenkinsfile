@@ -1,0 +1,41 @@
+// №2 практикалық жұмыс, 1-кезең: DevSecOps pipeline.
+// Образ "latest" емес, құрастыру нөмірімен тегтеледі (Canary үшін қажет).
+// CRITICAL/HIGH осалдық табылса, pipeline тоқтайды.
+pipeline {
+  agent any
+  environment { IMAGE = "<dockerhub-login>/java-app:${BUILD_NUMBER}" }
+  stages {
+    stage('Build') {
+      steps { dir('app') { sh 'docker build -t $IMAGE .' } }
+    }
+
+    // Қосымша тапсырма: SonarQube (docker run -d -p 9000:9000 sonarqube:community)
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv('sonarqube') {
+          dir('app') { sh 'mvn -B package sonar:sonar -Dsonar.projectKey=java-app' }
+        }
+      }
+    }
+    stage('Quality Gate') {
+      steps { timeout(time: 5, unit: 'MINUTES') { waitForQualityGate abortPipeline: true } }
+    }
+
+    stage('Security Scan') {
+      steps {
+        sh 'trivy image --format table --output trivy-report.txt --severity CRITICAL,HIGH $IMAGE || true'
+        sh 'trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed $IMAGE'
+      }
+      post { always { archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true } }
+    }
+
+    stage('Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub',
+                         usernameVariable: 'U', passwordVariable: 'P')]) {
+          sh 'echo $P | docker login -u $U --password-stdin && docker push $IMAGE'
+        }
+      }
+    }
+  }
+}
