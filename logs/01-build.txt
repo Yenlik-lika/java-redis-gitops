@@ -1,0 +1,5 @@
+BUILD_NUMBER=2  -> v1=java-app:2, v2=java-app:3, v3-bug=java-app:4
+IMAGE        ID             DISK USAGE   CONTENT SIZE   EXTRA
+java-app:2   e88ce82e3dcf        268MB         71.9MB        
+java-app:3   5cc292e10d8f        268MB         71.9MB        
+java-app:4   be8bd47b1288        268MB         71.9MB        

@@ -1,0 +1,30 @@
+$ curl localhost:8080/  x20  (Ingress -> app -> Redis)
+     20 200
+Java+Redis v1 | visits: 24
+
+$ kubectl logs -l app=java-redis-app --tail=20   # Redis-пен байланыс бар
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:24:13.862486515Z level=WARN app=java-redis-app version=v1 Vault secret file not found: /vault/secrets/redis (running without Redis password)
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:24:13.970442428Z level=INFO app=java-redis-app version=v1 Application started, listening on port 8080
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.274827993Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=6
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.297134340Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=8
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.306265426Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=9
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.364997082Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=11
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.389861823Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=14
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.448473713Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=16
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.456866651Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=17
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.473225897Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=19
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.531066009Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=21
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.540027595Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=22
+[pod/java-app-676d9df99f-g5n7q/java-app] 2026-11-27T04:26:45.600246545Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=24
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:24:26.654968763Z level=WARN app=java-redis-app version=v1 Vault secret file not found: /vault/secrets/redis (running without Redis password)
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:24:26.767004689Z level=INFO app=java-redis-app version=v1 Application started, listening on port 8080
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.161789184Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=4
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.173962508Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=5
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.287684654Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=7
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.355983900Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=10
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.373446634Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=12
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.381642301Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=13
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.399175709Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=15
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.465066574Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=18
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.522548257Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=20
+[pod/java-app-676d9df99f-lv6vb/java-app] 2026-11-27T04:26:45.590441235Z level=INFO app=java-redis-app version=v1 method=GET path=/ status=200 visits=23

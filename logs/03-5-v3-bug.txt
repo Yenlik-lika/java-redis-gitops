@@ -1,0 +1,51 @@
+$ kubectl argo rollouts set image java-redis-app java-app=java-app:4   (v3-bug)
+rollout "java-redis-app" image updated
+  [1] rollout phase=Progressing
+  [2] rollout phase=Progressing
+  [3] rollout phase=Paused
+Name:            java-redis-app
+Namespace:       default
+Status:          [0m॥[0m Paused
+Message:         CanaryPauseStep
+Strategy:        Canary
+  Step:          1/4
+  SetWeight:     10
+  ActualWeight:  10
+Images:          java-app:2
+                 java-app:3 ([32mstable[0m)
+                 java-app:4 ([33mcanary[0m)
+Replicas:
+  Desired:       3
+  Current:       7
+  Updated:       1
+  Ready:         7
+  Available:     7
+
+NAME                                        KIND        STATUS     AGE    INFO
+⟳ java-redis-app                            Rollout     [0m॥[0m Paused   2m20s  
+├──# revision:3                                                           
+│  └──⧉ [33mjava-redis-app-7ddcb9bb9c[0m           ReplicaSet  [32m✔[0m Healthy  11s    [33mcanary[0m
+│     └──□ java-redis-app-7ddcb9bb9c-twl95  Pod         [32m✔[0m Running  11s    ready:1/1
+├──# revision:2                                                           
+│  └──⧉ [32mjava-redis-app-5574dcdb78[0m           ReplicaSet  [32m✔[0m Healthy  114s   [32mstable[0m
+│     ├──□ java-redis-app-5574dcdb78-66ctx  Pod         [32m✔[0m Running  114s   ready:1/1
+│     ├──□ java-redis-app-5574dcdb78-pq2pj  Pod         [32m✔[0m Running  95s    ready:1/1
+│     └──□ java-redis-app-5574dcdb78-tsns6  Pod         [32m✔[0m Running  27s    ready:1/1
+└──# revision:1                                                           
+   └──⧉ java-redis-app-5688595b75           ReplicaSet  [32m✔[0m Healthy  2m20s  delay:9s
+      ├──□ java-redis-app-5688595b75-8xfc2  Pod         [32m✔[0m Running  2m20s  ready:1/1
+      ├──□ java-redis-app-5688595b75-hs7xz  Pod         [32m✔[0m Running  2m20s  ready:1/1
+      └──□ java-redis-app-5688595b75-ng4wb  Pod         [32m✔[0m Running  2m20s  ready:1/1
+
+      nginx.ingress.kubernetes.io/canary-weight: "10"
+
+# 200 сұрау: HTTP кодтары (canary 10% қате береді)
+    185 200
+     15 500
+
+# canary подының логы
+[pod/java-redis-app-7ddcb9bb9c-twl95/java-app] 2026-11-27T04:29:12.813800058Z level=ERROR app=java-redis-app version=v3-bug method=GET path=/ status=500 error="bug in v3-bug"
+[pod/java-redis-app-7ddcb9bb9c-twl95/java-app] 2026-11-27T04:29:12.888351572Z level=ERROR app=java-redis-app version=v3-bug method=GET path=/ status=500 error="bug in v3-bug"
+[pod/java-redis-app-7ddcb9bb9c-twl95/java-app] 2026-11-27T04:29:13.027673974Z level=ERROR app=java-redis-app version=v3-bug method=GET path=/ status=500 error="bug in v3-bug"
+[pod/java-redis-app-7ddcb9bb9c-twl95/java-app] 2026-11-27T04:29:13.143933516Z level=ERROR app=java-redis-app version=v3-bug method=GET path=/ status=500 error="bug in v3-bug"
+[pod/java-redis-app-7ddcb9bb9c-twl95/java-app] 2026-11-27T04:29:13.237909466Z level=ERROR app=java-redis-app version=v3-bug method=GET path=/ status=500 error="bug in v3-bug"

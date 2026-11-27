@@ -1,0 +1,40 @@
+NAME                                  READY   STATUS    RESTARTS   AGE     IP               NODE                  NOMINATED NODE   READINESS GATES
+pod/java-redis-app-5574dcdb78-phpkt   1/1     Running   0          8m58s   192.168.128.35   prac2-control-plane   <none>           <none>
+pod/java-redis-app-5574dcdb78-pq2pj   1/1     Running   0          12m     192.168.128.30   prac2-control-plane   <none>           <none>
+pod/java-redis-app-5574dcdb78-qmvk7   1/1     Running   0          8m28s   192.168.128.36   prac2-control-plane   <none>           <none>
+pod/java-redis-app-5574dcdb78-tsns6   1/1     Running   0          11m     192.168.128.31   prac2-control-plane   <none>           <none>
+pod/java-redis-app-5574dcdb78-zq4l2   1/1     Running   0          8m28s   192.168.128.37   prac2-control-plane   <none>           <none>
+pod/redis-769d7c8d6d-hhbkn            1/1     Running   0          17m     192.168.128.18   prac2-control-plane   <none>           <none>
+
+NAME                      TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE   SELECTOR
+service/java-app          NodePort    10.96.237.110   <none>        8080:30080/TCP   17m   app=java-redis-app
+service/java-app-canary   ClusterIP   10.96.2.97      <none>        8080/TCP         17m   app=java-redis-app,rollouts-pod-template-hash=5574dcdb78
+service/java-app-stable   ClusterIP   10.96.123.56    <none>        8080/TCP         17m   app=java-redis-app,rollouts-pod-template-hash=5574dcdb78
+service/kubernetes        ClusterIP   10.96.0.1       <none>        443/TCP          23m   <none>
+service/redis             ClusterIP   10.96.218.171   <none>        6379/TCP         17m   app=redis
+
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES    SELECTOR
+deployment.apps/redis   1/1     1            1           17m   redis        redis:7   app=redis
+
+NAME                                        DESIRED   CURRENT   READY   AGE   CONTAINERS   IMAGES       SELECTOR
+replicaset.apps/java-redis-app-5574dcdb78   5         5         5       12m   java-app     java-app:3   app=java-redis-app,rollouts-pod-template-hash=5574dcdb78
+replicaset.apps/java-redis-app-5688595b75   0         0         0       13m   java-app     java-app:2   app=java-redis-app,rollouts-pod-template-hash=5688595b75
+replicaset.apps/java-redis-app-7ddcb9bb9c   0         0         0       10m   java-app     java-app:4   app=java-redis-app,rollouts-pod-template-hash=7ddcb9bb9c
+replicaset.apps/redis-769d7c8d6d            1         1         1       17m   redis        redis:7      app=redis,pod-template-hash=769d7c8d6d
+
+NAME                                               REFERENCE                TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/java-app-hpa   Rollout/java-redis-app   cpu: 1%/50%   2         8         5          9m58s
+NAME                                                 POD-SELECTOR         AGE
+networkpolicy.networking.k8s.io/allow-app-to-redis   app=redis            13m
+networkpolicy.networking.k8s.io/allow-to-app         app=java-redis-app   13m
+networkpolicy.networking.k8s.io/default-deny         <none>               15m
+
+NAME                                                               CLASS   HOSTS   ADDRESS   PORTS   AGE
+ingress.networking.k8s.io/java-app-ingress                         nginx   *                 80      17m
+ingress.networking.k8s.io/java-redis-app-java-app-ingress-canary   nginx   *                 80      12m
+
+NAME                                               REFERENCE                TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/java-app-hpa   Rollout/java-redis-app   cpu: 1%/50%   2         8         5          9m58s
+
+NAME                                 DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+rollout.argoproj.io/java-redis-app   5         5         5            5           13m

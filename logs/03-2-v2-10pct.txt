@@ -1,0 +1,39 @@
+$ kubectl argo rollouts set image java-redis-app java-app=java-app:3
+rollout "java-redis-app" image updated
+  [1] rollout phase=Progressing
+  [2] rollout phase=Progressing
+  [3] rollout phase=Paused
+Name:            java-redis-app
+Namespace:       default
+Status:          [0m॥[0m Paused
+Message:         CanaryPauseStep
+Strategy:        Canary
+  Step:          1/4
+  SetWeight:     10
+  ActualWeight:  10
+Images:          java-app:2 ([32mstable[0m)
+                 java-app:3 ([33mcanary[0m)
+Replicas:
+  Desired:       3
+  Current:       4
+  Updated:       1
+  Ready:         4
+  Available:     4
+
+NAME                                        KIND        STATUS     AGE  INFO
+⟳ java-redis-app                            Rollout     [0m॥[0m Paused   36s  
+├──# revision:2                                                         
+│  └──⧉ [33mjava-redis-app-5574dcdb78[0m           ReplicaSet  [32m✔[0m Healthy  10s  [33mcanary[0m
+│     └──□ java-redis-app-5574dcdb78-66ctx  Pod         [32m✔[0m Running  10s  ready:1/1
+└──# revision:1                                                         
+   └──⧉ [32mjava-redis-app-5688595b75[0m           ReplicaSet  [32m✔[0m Healthy  36s  [32mstable[0m
+      ├──□ java-redis-app-5688595b75-8xfc2  Pod         [32m✔[0m Running  36s  ready:1/1
+      ├──□ java-redis-app-5688595b75-hs7xz  Pod         [32m✔[0m Running  36s  ready:1/1
+      └──□ java-redis-app-5688595b75-ng4wb  Pod         [32m✔[0m Running  36s  ready:1/1
+
+$ kubectl get ingress -o yaml | grep canary-weight
+      nginx.ingress.kubernetes.io/canary-weight: "10"
+
+# 100 сұрау: жауап қай нұсқадан келді
+     93 v1
+      7 v2

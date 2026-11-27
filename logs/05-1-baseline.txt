@@ -1,0 +1,23 @@
+NAME           REFERENCE                TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+java-app-hpa   Rollout/java-redis-app   cpu: 1%/50%   2         8         8          4m26s
+
+     ✓ status is 200
+
+     checks.........................: 100.00% 27721 out of 27721
+     data_received..................: 4.3 MB  72 kB/s
+     data_sent......................: 2.3 MB  38 kB/s
+     http_req_blocked...............: avg=4.56µs   min=1.27µs   med=2.96µs   max=2.08ms   p(90)=3.81µs   p(95)=4.69µs  
+     http_req_connecting............: avg=1.05µs   min=0s       med=0s       max=2.06ms   p(90)=0s       p(95)=0s      
+     http_req_duration..............: avg=7.82ms   min=468.01µs med=824.03µs max=70.76ms  p(90)=41.17ms  p(95)=41.74ms 
+       { expected_response:true }...: avg=7.82ms   min=468.01µs med=824.03µs max=70.76ms  p(90)=41.17ms  p(95)=41.74ms 
+     http_req_failed................: 0.00%   0 out of 27721
+     http_req_receiving.............: avg=7.01ms   min=8.89µs   med=64.43µs  max=42.83ms  p(90)=40.52ms  p(95)=40.97ms 
+     http_req_sending...............: avg=9.93µs   min=3.83µs   med=7.37µs   max=5.37ms   p(90)=10.47µs  p(95)=15.02µs 
+     http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s      
+     http_req_waiting...............: avg=805.53µs min=405.66µs med=639.61µs max=44.24ms  p(90)=1.14ms   p(95)=1.46ms  
+     http_reqs......................: 27721   460.937496/s
+     iteration_duration.............: avg=108.29ms min=100.58ms med=101.39ms max=170.86ms p(90)=141.73ms p(95)=142.25ms
+     iterations.....................: 27721   460.937496/s
+     vus............................: 50      min=50             max=50
+     vus_max........................: 50      min=50             max=50
+

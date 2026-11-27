@@ -1,0 +1,30 @@
+# Rollout-ты тұрақты v2-ге қайтару: kubectl argo rollouts set image java-redis-app java-app=java-app:3
+rollout "java-redis-app" image updated
+  [1] rollout phase=Degraded
+  [2] rollout phase=Healthy
+Name:            java-redis-app
+Namespace:       default
+Status:          [32m✔[0m Healthy
+Strategy:        Canary
+  Step:          4/4
+  SetWeight:     100
+  ActualWeight:  100
+Images:          java-app:3 ([32mstable[0m)
+Replicas:
+  Desired:       3
+  Current:       3
+  Updated:       3
+  Ready:         3
+  Available:     3
+
+NAME                                        KIND        STATUS        AGE    INFO
+⟳ java-redis-app                            Rollout     [32m✔[0m Healthy     3m1s   
+├──# revision:4                                                              
+│  └──⧉ [32mjava-redis-app-5574dcdb78[0m           ReplicaSet  [32m✔[0m Healthy     2m35s  [32mstable[0m
+│     ├──□ java-redis-app-5574dcdb78-66ctx  Pod         [32m✔[0m Running     2m35s  ready:1/1
+│     ├──□ java-redis-app-5574dcdb78-pq2pj  Pod         [32m✔[0m Running     2m16s  ready:1/1
+│     └──□ java-redis-app-5574dcdb78-tsns6  Pod         [32m✔[0m Running     68s    ready:1/1
+├──# revision:3                                                              
+│  └──⧉ java-redis-app-7ddcb9bb9c           ReplicaSet  [0m•[0m ScaledDown  52s    
+└──# revision:1                                                              
+   └──⧉ java-redis-app-5688595b75           ReplicaSet  [0m•[0m ScaledDown  3m1s   

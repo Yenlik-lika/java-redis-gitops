@@ -1,0 +1,8 @@
+# Prometheus метрикасы қайта жиналуда ма?
+  sum(up{job="java-app"}) = 2
+PromQL: up{job="java-app"}
+  {"__name__": "up", "container": "java-app", "endpoint": "http", "instance": "192.168.128.21:8080", "job": "java-app", "namespace": "default", "pod": "java-app-676d9df99f-g5n7q", "service": "java-app"} = 1
+  {"__name__": "up", "container": "java-app", "endpoint": "http", "instance": "192.168.128.22:8080", "job": "java-app", "namespace": "default", "pod": "java-app-676d9df99f-lv6vb", "service": "java-app"} = 1
+PromQL: sum(app_http_requests_total)
+  {} = 0
+>>> ТҮЗЕТУ: allow-to-app саясаты monitoring кеңістігіне 8080 портқа рұқсат береді -> up=1.

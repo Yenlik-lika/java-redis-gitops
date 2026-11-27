@@ -1,0 +1,34 @@
+$ kubectl describe podchaos pod-kill-java
+Status:
+  Conditions:
+    Status:  True
+    Type:    Selected
+    Status:  True
+    Type:    AllInjected
+    Status:  False
+    Type:    AllRecovered
+    Status:  False
+    Type:    Paused
+  Experiment:
+    Container Records:
+      Events:
+        Operation:      Apply
+        Timestamp:      2026-11-27T04:35:35Z
+        Type:           Succeeded
+      Id:               default/java-redis-app-5574dcdb78-ncmp5
+      Injected Count:   1
+      Phase:            Injected
+      Recovered Count:  0
+      Selector Key:     .
+    Desired Phase:      Run
+Events:
+  Type    Reason           Age   From            Message
+  ----    ------           ----  ----            -------
+  Normal  FinalizerInited  60s   initFinalizers  Finalizer has been inited
+  Normal  Updated          60s   initFinalizers  Successfully update finalizer of resource
+  Normal  Updated          60s   desiredphase    Successfully update desiredPhase of resource
+  Normal  Applied          60s   records         Successfully apply chaos for default/java-redis-app-5574dcdb78-ncmp5
+  Normal  Updated          60s   records         Successfully update records of resource
+
+Жойылған под (killed): java-redis-app-5574dcdb78-ncmp5
+Жаңа под java-redis-app-5574dcdb78-vhvx4: kill-ден кейін +0s құрылды, +9s Ready болды (іске қосылу -> Ready: 9s)

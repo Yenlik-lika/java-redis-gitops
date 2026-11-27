@@ -1,0 +1,5 @@
+=== k6: эксперимент алдында / кейін ===
+hpa-3m           reqs=  77627  rps=  430.9  avg=    15.5ms  p95=    42.2ms  max=   152.3ms  errors=  0.00%
+baseline         reqs=  27721  rps=  460.9  avg=     7.8ms  p95=    41.7ms  max=    70.8ms  errors=  0.00%
+pod-kill         reqs=  32497  rps=  432.6  avg=    15.0ms  p95=    41.8ms  max=  5041.4ms  errors=  0.00%
+redis-delay      reqs=  14378  rps=  159.5  avg=   212.7ms  p95=    42.3ms  max= 31169.2ms  errors= 21.14%

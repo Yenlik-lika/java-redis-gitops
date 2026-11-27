@@ -1,0 +1,26 @@
+$ trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed java-app:2
+2026-11-27T04:19:20Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-11-27T04:19:20Z	INFO	[secret] Secret scanning is enabled
+2026-11-27T04:19:20Z	INFO	[secret] If your scanning is slow, please try '--scanners vuln' to disable secret scanning
+2026-11-27T04:19:20Z	INFO	[secret] Please see https://trivy.dev/docs/v0.76/guide/scanner/secret#recommendation for faster secret detection
+2026-11-27T04:19:21Z	INFO	Detected OS	family="alpine" version="3.24.4"
+2026-11-27T04:19:21Z	INFO	[alpine] Detecting vulnerabilities...	os_version="3.24" repository="3.24" pkg_num=73
+2026-11-27T04:19:21Z	INFO	Number of language-specific files	num=1
+2026-11-27T04:19:21Z	INFO	[jar] Detecting vulnerabilities...
+2026-11-27T04:19:21Z	WARN	Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.76/guide/scanner/vulnerability#severity-selection for details.
+
+Report Summary
+
+┌────────────────────────────┬────────┬─────────────────┬─────────┐
+│           Target           │  Type  │ Vulnerabilities │ Secrets │
+├────────────────────────────┼────────┼─────────────────┼─────────┤
+│ java-app:2 (alpine 3.24.4) │ alpine │        0        │    -    │
+├────────────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar                │  jar   │        0        │    -    │
+└────────────────────────────┴────────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+exit code = 0
+>>> GATE PASSED -> stage('Push') іске қосылады

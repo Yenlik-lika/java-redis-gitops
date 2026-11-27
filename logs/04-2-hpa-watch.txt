@@ -1,0 +1,17 @@
+NAME           REFERENCE                TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+java-app-hpa   Rollout/java-redis-app   cpu: 11%/50%   2         8         3          15s
+java-app-hpa   Rollout/java-redis-app   cpu: 7%/50%    2         8         3          30s
+java-app-hpa   Rollout/java-redis-app   cpu: 72%/50%   2         8         3          45s
+java-app-hpa   Rollout/java-redis-app   cpu: 95%/50%   2         8         5          60s
+java-app-hpa   Rollout/java-redis-app   cpu: 74%/50%   2         8         6          75s
+java-app-hpa   Rollout/java-redis-app   cpu: 72%/50%   2         8         6          90s
+java-app-hpa   Rollout/java-redis-app   cpu: 51%/50%   2         8         8          105s
+java-app-hpa   Rollout/java-redis-app   cpu: 50%/50%   2         8         8          2m
+java-app-hpa   Rollout/java-redis-app   cpu: 35%/50%   2         8         8          2m15s
+java-app-hpa   Rollout/java-redis-app   cpu: 30%/50%   2         8         8          2m30s
+java-app-hpa   Rollout/java-redis-app   cpu: 39%/50%   2         8         8          2m45s
+java-app-hpa   Rollout/java-redis-app   cpu: 42%/50%   2         8         8          3m
+java-app-hpa   Rollout/java-redis-app   cpu: 31%/50%   2         8         8          3m15s
+java-app-hpa   Rollout/java-redis-app   cpu: 28%/50%   2         8         8          3m30s
+java-app-hpa   Rollout/java-redis-app   cpu: 9%/50%    2         8         8          3m45s
+java-app-hpa   Rollout/java-redis-app   cpu: 1%/50%    2         8         8          4m

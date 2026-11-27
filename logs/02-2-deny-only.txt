@@ -1,0 +1,31 @@
+$ kubectl apply -f netpol.yaml -l step=deny   (тек default-deny)
+networkpolicy.networking.k8s.io/default-deny created
+# Calico бар (established) қосылыстарды үзбейді, сондықтан жаңа қосылыс ашылуы үшін подтарды қайта іске қосамыз
+deployment.apps/java-app restarted
+Waiting for deployment "java-app" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "java-app" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "java-app" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "java-app" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "java-app" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "java-app" rollout to finish: 1 old replicas are pending termination...
+deployment "java-app" successfully rolled out
+NAME           POD-SELECTOR   AGE
+default-deny   <none>         25s
+
+$ kubectl run attacker ... redis-cli -h redis -p 6379 ping
+All commands and output from this session will be recorded in container logs, including credentials and sensitive information passed through the command prompt.
+If you don't see a command prompt, try pressing enter.
+pod "attacker-2" deleted from default namespace
+pod default/attacker-2 terminated (Error)
+>>> PONG жоқ: 10 с timeout, қосылыс бөгелді
+
+$ curl -m 8 localhost:8080/   (Ingress -> app)
+HTTP 000
+timeout (Ingress -> app бөгелді)
+
+# Prometheus -> app:8080 scrape
+  sum(up{job="java-app"}) = 0
+PromQL: up{job="java-app"}
+  {"__name__": "up", "container": "java-app", "endpoint": "http", "instance": "192.168.128.21:8080", "job": "java-app", "namespace": "default", "pod": "java-app-676d9df99f-g5n7q", "service": "java-app"} = 0
+  {"__name__": "up", "container": "java-app", "endpoint": "http", "instance": "192.168.128.22:8080", "job": "java-app", "namespace": "default", "pod": "java-app-676d9df99f-lv6vb", "service": "java-app"} = 0
+>>> СЕБЕБІ: default-deny monitoring кеңістігіндегі Prometheus-тан келетін трафикті де жабады -> метрика жиналмайды (up=0).

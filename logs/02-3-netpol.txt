@@ -1,0 +1,51 @@
+$ cat netpol.yaml
+# 2-кезең. Zero-trust желі: әдепкіде бәрі жабық, тек қажетті жолдар ашық.
+# Prometheus "monitoring" кеңістігінде (kube-prometheus-stack). Басқа кеңістікте болса, атауын өзгертіңіз.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels: {step: deny}
+spec:
+  podSelector: {}            # default кеңістігіндегі БАРЛЫҚ под
+  policyTypes: [Ingress]     # кіріс трафигі тек төмендегі ережелермен рұқсат
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-redis
+  labels: {step: allow}
+spec:
+  podSelector: {matchLabels: {app: redis}}
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: java-redis-app}}}]
+      ports: [{port: 6379}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-app
+  labels: {step: allow}
+spec:
+  podSelector: {matchLabels: {app: java-redis-app}}
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+      ports: [{port: 8080}]
+
+$ kubectl apply -f netpol.yaml
+networkpolicy.networking.k8s.io/default-deny unchanged
+networkpolicy.networking.k8s.io/allow-app-to-redis created
+networkpolicy.networking.k8s.io/allow-to-app created
+NAME                 POD-SELECTOR         AGE
+allow-app-to-redis   app=redis            0s
+allow-to-app         app=java-redis-app   0s
+default-deny         <none>               2m15s
+
+$ kubectl run attacker --image=redis:7 -it --rm -- redis-cli -h redis -p 6379 ping   # timeout
+All commands and output from this session will be recorded in container logs, including credentials and sensitive information passed through the command prompt.
+If you don't see a command prompt, try pressing enter.
+pod "attacker-3" deleted from default namespace
+pod default/attacker-3 terminated (Error)
+>>> PONG жоқ: 10 с timeout, бөгде под Redis-ке қосыла алмады

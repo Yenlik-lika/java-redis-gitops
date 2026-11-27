@@ -1,0 +1,45 @@
+# pause 60s аяқталғанша күтеміз -> 100%
+  [1] rollout phase=Paused
+  [2] rollout phase=Paused
+  [3] rollout phase=Paused
+  [4] rollout phase=Paused
+  [5] rollout phase=Paused
+  [6] rollout phase=Paused
+  [7] rollout phase=Paused
+  [8] rollout phase=Paused
+  [9] rollout phase=Paused
+  [10] rollout phase=Paused
+  [11] rollout phase=Progressing
+  [12] rollout phase=Healthy
+Name:            java-redis-app
+Namespace:       default
+Status:          [32m✔[0m Healthy
+Strategy:        Canary
+  Step:          4/4
+  SetWeight:     100
+  ActualWeight:  100
+Images:          java-app:2
+                 java-app:3 ([32mstable[0m)
+Replicas:
+  Desired:       3
+  Current:       6
+  Updated:       3
+  Ready:         6
+  Available:     6
+
+NAME                                        KIND        STATUS     AGE   INFO
+⟳ java-redis-app                            Rollout     [32m✔[0m Healthy  2m1s  
+├──# revision:2                                                          
+│  └──⧉ [32mjava-redis-app-5574dcdb78[0m           ReplicaSet  [32m✔[0m Healthy  95s   [32mstable[0m
+│     ├──□ java-redis-app-5574dcdb78-66ctx  Pod         [32m✔[0m Running  95s   ready:1/1
+│     ├──□ java-redis-app-5574dcdb78-pq2pj  Pod         [32m✔[0m Running  76s   ready:1/1
+│     └──□ java-redis-app-5574dcdb78-tsns6  Pod         [32m✔[0m Running  8s    ready:1/1
+└──# revision:1                                                          
+   └──⧉ java-redis-app-5688595b75           ReplicaSet  [32m✔[0m Healthy  2m1s  delay:28s
+      ├──□ java-redis-app-5688595b75-8xfc2  Pod         [32m✔[0m Running  2m1s  ready:1/1
+      ├──□ java-redis-app-5688595b75-hs7xz  Pod         [32m✔[0m Running  2m1s  ready:1/1
+      └──□ java-redis-app-5688595b75-ng4wb  Pod         [32m✔[0m Running  2m1s  ready:1/1
+
+# 50 сұрау
+     26 v1
+     24 v2

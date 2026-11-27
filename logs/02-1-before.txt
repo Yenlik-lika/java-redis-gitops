@@ -1,0 +1,9 @@
+$ kubectl run attacker --image=redis:7 --rm -i --restart=Never -- redis-cli -h redis -p 6379 ping
+All commands and output from this session will be recorded in container logs, including credentials and sensitive information passed through the command prompt.
+If you don't see a command prompt, try pressing enter.
+warning: couldn't attach to pod/attacker, falling back to streaming logs: Internal error occurred: unable to upgrade connection: container attacker not found in pod attacker_default
+PONG
+pod "attacker" deleted from default namespace
+PromQL: up{job="java-app"}
+  {"__name__": "up", "container": "java-app", "endpoint": "http", "instance": "192.168.128.17:8080", "job": "java-app", "namespace": "default", "pod": "java-app-8469c4d9f7-kjcld", "service": "java-app"} = 1
+  {"__name__": "up", "container": "java-app", "endpoint": "http", "instance": "192.168.128.19:8080", "job": "java-app", "namespace": "default", "pod": "java-app-8469c4d9f7-kltcv", "service": "java-app"} = 1

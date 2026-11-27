@@ -1,0 +1,12 @@
+$ kubectl get nodes -o wide   # CONTAINER-RUNTIME бағаны
+NAME                  STATUS   ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                         KERNEL-VERSION     CONTAINER-RUNTIME
+prac2-control-plane   Ready    control-plane   17m   v1.35.0   172.18.0.2    <none>        Debian GNU/Linux 12 (bookworm)   7.0.0-1020-azure   containerd://2.2.0
+
+>>> runtime = containerd -> chaosDaemon.runtime=containerd, socketPath=/run/containerd/containerd.sock
+NAME                                        READY   STATUS    RESTARTS   AGE
+chaos-controller-manager-75f49678fd-2jnng   1/1     Running   0          14s
+chaos-controller-manager-75f49678fd-5vhsq   1/1     Running   0          14s
+chaos-controller-manager-75f49678fd-vwblm   1/1     Running   0          14s
+chaos-daemon-rzh5v                          1/1     Running   0          14s
+chaos-dashboard-5b89cc5b9-6gzhk             1/1     Running   0          14s
+chaos-dns-server-f9d68946d-7kh52            1/1     Running   0          14s

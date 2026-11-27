@@ -1,0 +1,17 @@
+$ kubectl get nodes -o wide
+NAME                  STATUS   ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                         KERNEL-VERSION     CONTAINER-RUNTIME
+prac2-control-plane   Ready    control-plane   61s   v1.35.0   172.18.0.2    <none>        Debian GNU/Linux 12 (bookworm)   7.0.0-1020-azure   containerd://2.2.0
+
+$ kubectl get pods -n kube-system -l k8s-app=calico-node
+NAME                READY   STATUS    RESTARTS   AGE
+calico-node-5r2c5   1/1     Running   0          52s
+
+$ kubectl get pods -n ingress-nginx
+NAME                                        READY   STATUS      RESTARTS   AGE
+ingress-nginx-admission-create-krgpc        0/1     Completed   0          24s
+ingress-nginx-admission-patch-c2cqd         0/1     Completed   1          24s
+ingress-nginx-controller-6d6c8bdd44-tpgmb   1/1     Running     0          24s
+
+$ kubectl get deploy metrics-server -n kube-system
+NAME             READY   UP-TO-DATE   AVAILABLE   AGE
+metrics-server   1/1     1            1           26s

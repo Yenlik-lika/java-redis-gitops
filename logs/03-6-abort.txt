@@ -1,0 +1,38 @@
+$ kubectl argo rollouts abort java-redis-app   # трафик 100% stable-ге оралады
+rollout 'java-redis-app' aborted
+Name:            java-redis-app
+Namespace:       default
+Status:          [31m✖[0m Degraded
+Message:         RolloutAborted: Rollout aborted update to revision 3
+Strategy:        Canary
+  Step:          0/4
+  SetWeight:     0
+  ActualWeight:  0
+Images:          java-app:3 ([32mstable[0m)
+                 java-app:4 ([33mcanary[0m)
+Replicas:
+  Desired:       3
+  Current:       4
+  Updated:       1
+  Ready:         4
+  Available:     4
+
+NAME                                        KIND        STATUS        AGE    INFO
+⟳ java-redis-app                            Rollout     [31m✖[0m Degraded    2m45s  
+├──# revision:3                                                              
+│  └──⧉ [33mjava-redis-app-7ddcb9bb9c[0m           ReplicaSet  [32m✔[0m Healthy     36s    [33mcanary[0m,delay:14s
+│     └──□ java-redis-app-7ddcb9bb9c-twl95  Pod         [32m✔[0m Running     36s    ready:1/1
+├──# revision:2                                                              
+│  └──⧉ [32mjava-redis-app-5574dcdb78[0m           ReplicaSet  [32m✔[0m Healthy     2m19s  [32mstable[0m
+│     ├──□ java-redis-app-5574dcdb78-66ctx  Pod         [32m✔[0m Running     2m19s  ready:1/1
+│     ├──□ java-redis-app-5574dcdb78-pq2pj  Pod         [32m✔[0m Running     2m     ready:1/1
+│     └──□ java-redis-app-5574dcdb78-tsns6  Pod         [32m✔[0m Running     52s    ready:1/1
+└──# revision:1                                                              
+   └──⧉ java-redis-app-5688595b75           ReplicaSet  [0m•[0m ScaledDown  2m45s  
+
+$ kubectl get ingress -o yaml | grep canary-weight
+      nginx.ingress.kubernetes.io/canary-weight: "0"
+
+# 200 сұрау abort-тан кейін
+    200 200
+     20 v2

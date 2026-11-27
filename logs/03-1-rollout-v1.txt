@@ -1,0 +1,31 @@
+$ kubectl delete deployment java-app && kubectl apply -f canary.yaml
+deployment.apps "java-app" deleted from default namespace
+service/java-app-stable unchanged
+service/java-app-canary unchanged
+ingress.networking.k8s.io/java-app-ingress unchanged
+rollout.argoproj.io/java-redis-app created
+  [1] rollout phase=Progressing
+  [2] rollout phase=Progressing
+  [3] rollout phase=Healthy
+Name:            java-redis-app
+Namespace:       default
+Status:          [32m✔[0m Healthy
+Strategy:        Canary
+  Step:          4/4
+  SetWeight:     100
+  ActualWeight:  100
+Images:          java-app:2 ([32mstable[0m)
+Replicas:
+  Desired:       3
+  Current:       3
+  Updated:       3
+  Ready:         3
+  Available:     3
+
+NAME                                        KIND        STATUS     AGE  INFO
+⟳ java-redis-app                            Rollout     [32m✔[0m Healthy  10s  
+└──# revision:1                                                         
+   └──⧉ [32mjava-redis-app-5688595b75[0m           ReplicaSet  [32m✔[0m Healthy  10s  [32mstable[0m
+      ├──□ java-redis-app-5688595b75-8xfc2  Pod         [32m✔[0m Running  10s  ready:1/1
+      ├──□ java-redis-app-5688595b75-hs7xz  Pod         [32m✔[0m Running  10s  ready:1/1
+      └──□ java-redis-app-5688595b75-ng4wb  Pod         [32m✔[0m Running  10s  ready:1/1

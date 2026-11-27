@@ -1,0 +1,21 @@
+NAME                       READY   UP-TO-DATE   AVAILABLE   AGE    CONTAINERS   IMAGES       SELECTOR
+deployment.apps/java-app   2/2     2            2           2m2s   java-app     java-app:2   app=java-redis-app
+deployment.apps/redis      1/1     1            1           2m2s   redis        redis:7      app=redis
+
+NAME                      TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE     SELECTOR
+service/java-app          NodePort    10.96.237.110   <none>        8080:30080/TCP   2m2s    app=java-redis-app
+service/java-app-canary   ClusterIP   10.96.2.97      <none>        8080/TCP         107s    app=java-redis-app
+service/java-app-stable   ClusterIP   10.96.123.56    <none>        8080/TCP         107s    app=java-redis-app
+service/kubernetes        ClusterIP   10.96.0.1       <none>        443/TCP          7m48s   <none>
+service/redis             ClusterIP   10.96.218.171   <none>        6379/TCP         2m2s    app=redis
+
+NAME                                         CLASS   HOSTS   ADDRESS   PORTS   AGE
+ingress.networking.k8s.io/java-app-ingress   nginx   *                 80      107s
+
+NAME                            READY   STATUS    RESTARTS   AGE    IP               NODE                  NOMINATED NODE   READINESS GATES
+pod/java-app-8469c4d9f7-kjcld   1/1     Running   0          2m2s   192.168.128.17   prac2-control-plane   <none>           <none>
+pod/java-app-8469c4d9f7-kltcv   1/1     Running   0          2m2s   192.168.128.19   prac2-control-plane   <none>           <none>
+pod/redis-769d7c8d6d-hhbkn      1/1     Running   0          2m2s   192.168.128.18   prac2-control-plane   <none>           <none>
+
+$ curl localhost:8080/
+Java+Redis v1 | visits: 3

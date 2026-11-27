@@ -1,0 +1,9 @@
+kubectl-argo-rollouts: v1.10.2+be8a622
+  BuildDate: 2026-11-04T15:16:36Z
+  GitCommit: be8a6221c6c9751cd14497f31a2cb3c33690375a
+  GitTreeState: clean
+  GoVersion: go1.26.10
+  Compiler: gc
+  Platform: linux/amd64
+NAME                             READY   STATUS    RESTARTS   AGE
+argo-rollouts-6f454f5445-r6rxr   1/1     Running   0          4s

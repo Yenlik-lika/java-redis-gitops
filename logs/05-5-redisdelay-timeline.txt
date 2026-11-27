@@ -1,0 +1,20 @@
+04:36:52  $ kubectl apply -f chaos.yaml -l exp=redis-delay
+networkchaos.chaos-mesh.org/redis-delay created
+NAME          ACTION   DURATION
+redis-delay   delay    60s
+04:36:57  HTTP 000  time=10.002236s
+04:37:13  HTTP 503  time=0.003111s
+04:37:19  HTTP 503  time=0.002737s
+04:37:25  HTTP 503  time=2.004931s
+04:37:33  HTTP 503  time=3.570973s
+04:37:43  HTTP 503  time=5.751190s
+04:37:55  HTTP 200  time=0.002992s
+04:38:01  HTTP 200  time=0.043070s
+
+# қолданба логы (Redis уақыт шегі)
+[pod/java-redis-app-5574dcdb78-tsns6/java-app] 2026-11-27T04:38:04.285038446Z level=INFO app=java-redis-app version=v2 method=GET path=/ status=200 visits=148469
+[pod/java-redis-app-5574dcdb78-tsns6/java-app] 2026-11-27T04:38:04.931785037Z level=INFO app=java-redis-app version=v2 method=GET path=/ status=200 visits=148751
+[pod/java-redis-app-5574dcdb78-tsns6/java-app] 2026-11-27T04:38:05.272076503Z level=INFO app=java-redis-app version=v2 method=GET path=/ status=200 visits=148893
+[pod/java-redis-app-5574dcdb78-zq4l2/java-app] 2026-11-27T04:38:04.078503756Z level=INFO app=java-redis-app version=v2 method=GET path=/ status=200 visits=148383
+[pod/java-redis-app-5574dcdb78-zq4l2/java-app] 2026-11-27T04:38:05.135039149Z level=INFO app=java-redis-app version=v2 method=GET path=/ status=200 visits=148838
+[pod/java-redis-app-5574dcdb78-zq4l2/java-app] 2026-11-27T04:38:06.372503768Z level=INFO app=java-redis-app version=v2 method=GET path=/ status=200 visits=149364

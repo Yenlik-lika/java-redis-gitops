@@ -1,0 +1,7 @@
+NAME                                                     READY   STATUS    RESTARTS   AGE
+alertmanager-monitoring-kube-prometheus-alertmanager-0   2/2     Running   0          36s
+monitoring-grafana-7b65c54c67-2czt7                      3/3     Running   0          41s
+monitoring-kube-prometheus-operator-7dc4497449-mzkkv     1/1     Running   0          41s
+monitoring-kube-state-metrics-7994f48c57-rtg84           1/1     Running   0          41s
+monitoring-prometheus-node-exporter-fx62z                1/1     Running   0          41s
+prometheus-monitoring-kube-prometheus-prometheus-0       2/2     Running   0          35s

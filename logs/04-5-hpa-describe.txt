@@ -1,0 +1,30 @@
+Annotations:                                           <none>
+CreationTimestamp:                                     Fri, 27 Nov 2026 04:29:53 +0000
+Reference:                                             Rollout/java-redis-app
+Metrics:                                               ( current / target )
+  resource cpu on pods  (as a percentage of request):  1% (1m) / 50%
+Min replicas:                                          2
+Max replicas:                                          8
+Rollout pods:                                          8 current / 8 desired
+Conditions:
+  Type            Status  Reason               Message
+  ----            ------  ------               -------
+  AbleToScale     True    ScaleDownStabilized  recent recommendations were higher than current one, applying the highest recent recommendation
+  ScalingActive   True    ValidMetricFound     the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)
+  ScalingLimited  False   DesiredWithinRange   the desired count is within the acceptable range
+Events:
+  Type    Reason             Age    From                       Message
+  ----    ------             ----   ----                       -------
+  Normal  SuccessfulRescale  3m20s  horizontal-pod-autoscaler  New size: 5; reason: cpu resource utilization (percentage of request) above target
+  Normal  SuccessfulRescale  3m5s   horizontal-pod-autoscaler  New size: 6; reason: cpu resource utilization (percentage of request) above target
+  Normal  SuccessfulRescale  2m35s  horizontal-pod-autoscaler  New size: 8; reason: cpu resource utilization (percentage of request) above target
+
+NAME                              READY   STATUS    RESTARTS   AGE     IP               NODE                  NOMINATED NODE   READINESS GATES
+java-redis-app-5574dcdb78-66ctx   1/1     Running   0          6m41s   192.168.128.29   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-hjlkp   1/1     Running   0          3m20s   192.168.128.34   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-ncmp5   1/1     Running   0          3m20s   192.168.128.33   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-phpkt   1/1     Running   0          3m5s    192.168.128.35   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-pq2pj   1/1     Running   0          6m22s   192.168.128.30   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-qmvk7   1/1     Running   0          2m35s   192.168.128.36   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-tsns6   1/1     Running   0          5m14s   192.168.128.31   prac2-control-plane   <none>           <none>
+java-redis-app-5574dcdb78-zq4l2   1/1     Running   0          2m35s   192.168.128.37   prac2-control-plane   <none>           <none>
