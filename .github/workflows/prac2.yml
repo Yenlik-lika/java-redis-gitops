@@ -4,6 +4,8 @@ jobs:
   prac2:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: write
     env:
       GF_PW: prac2admin
     steps:
@@ -276,7 +278,7 @@ jobs:
           } 2>&1 | tee logs/04-1-hpa.txt
           for i in $(seq 1 30); do kubectl get hpa java-app-hpa --no-headers | grep -q unknown || break; sleep 5; done
           kubectl get hpa java-app-hpa | tee -a logs/04-1-hpa.txt
-          echo "T_HPA0=$(now_ms)" >> $GITHUB_ENV
+          echo "T_HPA0=$(date +%s%3N)" >> $GITHUB_ENV
           timeout 230 kubectl get hpa java-app-hpa -w > logs/04-2-hpa-watch.txt 2>&1 &
           ( for i in $(seq 1 22); do echo "$(date -u +%T)  $(kubectl get hpa java-app-hpa --no-headers | awk '{print "TARGETS="$4, "REPLICAS="$7}')  pods_running=$(kubectl get pods -l app=java-redis-app --no-headers | grep -c Running)"; sleep 10; done ) > logs/04-3-pods-timeline.txt &
           cat prac2/load-test.js
@@ -285,7 +287,7 @@ jobs:
           sleep 30; wait || true
           cat logs/04-2-hpa-watch.txt logs/04-3-pods-timeline.txt
           { kubectl describe hpa java-app-hpa | tail -20; echo; kubectl get pods -l app=java-redis-app -o wide; } | tee logs/04-5-hpa-describe.txt
-          echo "T_HPA1=$(now_ms)" >> $GITHUB_ENV
+          echo "T_HPA1=$(date +%s%3N)" >> $GITHUB_ENV
 
       # ---------------- 5. Chaos Engineering ----------------
       - name: "5. Install Chaos Mesh (runtime=containerd)"
@@ -397,3 +399,13 @@ jobs:
             shots/
             logs/
             prac2/
+
+      - name: Push results to branch prac2-results
+        if: always()
+        run: |
+          git config user.name "github-actions"; git config user.email "actions@github.com"
+          git checkout -q --orphan prac2-results
+          git rm -rq --cached .
+          git add -f shots logs
+          git commit -qm "prac2 results, run ${{ github.run_number }}"
+          git push -qf origin prac2-results
